@@ -1,0 +1,23 @@
+## Interface: 11200
+## Title: amptieRaidTools
+## Notes: Raid-Tools mit Navbar und Komponenten (TurtleWoW 1.12)
+## Author: amptie
+## Version: 0.1.0
+## SavedVariablesPerCharacter: amptieRaidToolsDB, ART_BuffsList, ART_Profiles, ART_ActiveProfileName, ART_SpecBindings, ART_BarProfiles, ART_ActiveBarProfileName, ART_BarSpecBindings, ART_SalvationOverride, ART_RaidCDs
+
+main.lua
+components\playerinfo.lua
+components\home.lua
+components\npctrading.lua
+components\autorolls.lua
+components\autobuffs.lua
+components\barprofiles.lua
+components\raidcds.lua
+components\roleroster.lua
+components\raidsetups.lua
+components\raidassists.lua
+components\mtoverlay.lua
+components\itemchecks.lua
+components\buffchecks.lua
+components\lootrules.lua
+components\qolsettings.lua
