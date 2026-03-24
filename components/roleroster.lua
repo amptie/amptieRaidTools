@@ -662,18 +662,19 @@ function AmptieRaidTools_InitRoleRoster(body)
         specFs:SetJustifyH("LEFT")
         row.specFs = specFs
 
-        -- Alt spec icons (up to 4, tighter pitch)
+        -- Alt spec icons (up to 3 — player's own main role is always excluded)
+        -- pitch=46: icon(16) + gap(2) + label(26) + gap(2) = 46, no overlap
         local altIcons = {}
-        for ai = 1, 4 do
+        for ai = 1, 3 do
             local af = CreateFrame("Frame", nil, row)
             af:SetWidth(16)
             af:SetHeight(16)
-            af:SetPoint("LEFT", row, "LEFT", 330 + (ai - 1) * 32, 0)
+            af:SetPoint("LEFT", row, "LEFT", 330 + (ai - 1) * 46, 0)
             local aTex = af:CreateTexture(nil, "ARTWORK")
             aTex:SetAllPoints(af)
             local aLbl = af:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             aLbl:SetPoint("LEFT", af, "RIGHT", 2, 0)
-            aLbl:SetWidth(16)
+            aLbl:SetWidth(26)
             aLbl:SetJustifyH("LEFT")
             aLbl:SetTextColor(0.70, 0.70, 0.70, 1)
             af.tex = aTex
@@ -683,10 +684,11 @@ function AmptieRaidTools_InitRoleRoster(body)
         end
         row.altIcons = altIcons
 
-        -- Item Check icons (up to 8 missing items, x=448+)
+        -- Item Check icons (up to 8 missing items, x=468+)
+        -- starts after 3 alt slots: 330 + 2*46 + 16 + 2 + 26 + 2 = 468
         local IC_MAX   = 8
-        local IC_X     = 448
-        local IC_PITCH = 16
+        local IC_X     = 468
+        local IC_PITCH = 14
         local icIcons  = {}
         for ji = 1, IC_MAX do
             local jf = CreateFrame("Frame", nil, row)
@@ -794,7 +796,7 @@ function AmptieRaidTools_InitRoleRoster(body)
                 local alts = rosterAltSpecs[data.name] or {}
                 local altCount = 0
                 -- Reset all
-                for ai = 1, 4 do row.altIcons[ai]:Hide() end
+                for ai = 1, 3 do row.altIcons[ai]:Hide() end
                 -- Fill in order: Tank, PhysDPS, Caster, Healer
                 local ALT_ORDER = { "Tank", "PhysDPS", "Caster", "Healer" }
                 for aoi = 1, 4 do
@@ -802,7 +804,7 @@ function AmptieRaidTools_InitRoleRoster(body)
                     local tier = alts[rk]
                     if tier and ALT_ROLE_BROAD[rk] ~= role then
                         altCount = altCount + 1
-                        if altCount <= 4 then
+                        if altCount <= 3 then
                             local af = row.altIcons[altCount]
                             af.tex:SetTexture(ALT_ROLE_ICONS[rk])
                             af.lbl:SetText(tier)

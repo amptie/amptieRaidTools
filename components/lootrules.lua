@@ -32,6 +32,7 @@ local function GetLRDB()
     end
     if not db.activeLRProfile  then db.activeLRProfile  = "Default" end
     if not db.lrZoneBindings   then db.lrZoneBindings   = {}        end
+    -- lcPopupAnchor / lcCouncilAnchor are nil until the user drags a frame for the first time
     return db
 end
 
@@ -52,22 +53,24 @@ local QUALITY_COLORS = {
 -- Zone table
 -- ============================================================
 local ART_LR_ZONES = {
-    { key="mc",   label="Molten Core",    zone="Molten Core"           },
-    { key="ony",  label="Onyxia's Lair",  zone="Onyxia's Lair"         },
-    { key="bwl",  label="Blackwing Lair", zone="Blackwing Lair"        },
-    { key="zg",   label="Zul'Gurub",      zone="Zul'Gurub"             },
-    { key="aq20", label="Ruins of AQ",    zone="Ruins of Ahn'Qiraj"    },
-    { key="aq40", label="Temple of AQ",   zone="Ahn'Qiraj"             },
-    { key="naxx", label="Naxxramas",      zone="Naxxramas"             },
-    { key="kara", label="Karazhan",       zone="Karazhan"              },
+    { key="mc",      label="Molten Core",    zone="Molten Core"           },
+    { key="ony",     label="Onyxia's Lair",  zone="Onyxia's Lair"         },
+    { key="bwl",     label="Blackwing Lair", zone="Blackwing Lair"        },
+    { key="zg",      label="Zul'Gurub",      zone="Zul'Gurub"             },
+    { key="aq20",    label="Ruins of AQ",    zone="Ruins of Ahn'Qiraj"    },
+    { key="aq40",    label="Temple of AQ",   zone="Ahn'Qiraj"             },
+    { key="naxx",    label="Naxxramas",      zone="Naxxramas"             },
+    { key="kara",    label="Karazhan",       zone="Karazhan"              },
+    { key="outraid", label="Out of Raid",    zone=nil                     },
 }
 
 local function GetCurrentLRZoneKey()
     local zone = GetRealZoneText()
     for i = 1, getn(ART_LR_ZONES) do
-        if ART_LR_ZONES[i].zone == zone then return ART_LR_ZONES[i].key end
+        local z = ART_LR_ZONES[i]
+        if z.zone and z.zone == zone then return z.key end
     end
-    return nil
+    return "outraid"   -- no raid zone matched → outside any raid
 end
 
 -- ============================================================
@@ -134,8 +137,8 @@ local CLASS_SHORT = {
     WARRIOR="War", PALADIN="Pala", HUNTER="Hunt", ROGUE="Rog",
     PRIEST="Pri", SHAMAN="Sha", MAGE="Mage", WARLOCK="Lock", DRUID="Dru",
 }
-local SORT_OPTS   = {"priority","roll","name","class","guildRank"}
-local SORT_LABELS = {priority="Priority",roll="Roll",name="Name",class="Class",guildRank="G.Rank"}
+local SORT_OPTS   = {"priority","roll","name","class","guildRank","dkp"}
+local SORT_LABELS = {priority="Priority",roll="Roll",name="Name",class="Class",guildRank="G.Rank",dkp="DKP Bid"}
 
 local function EnsureCouncilSettings(prof)
     if not prof.councilCols then
@@ -412,6 +415,16 @@ end
 -- dv 1 = double-vote (popup stays open after clicking; player picks a second button)
 -- ============================================================
 -- Returns a "^name~prio~roll~dv^..." suffix string (empty if no buttons)
+local function EncodeOfficers(officers)
+    if not officers or getn(officers) == 0 then return "" end
+    local out = ""
+    for i = 1, getn(officers) do
+        if i > 1 then out = out..";" end
+        out = out..officers[i]
+    end
+    return out
+end
+
 local function EncodeLCButtons(buttons)
     local out = ""
     for i = 1, getn(buttons) do
@@ -539,23 +552,48 @@ local function SavePopupAnchor(f)
         popupAnchorRelPt = "BOTTOMLEFT"
         popupAnchorX     = cx
         popupAnchorY     = cy
+        local db = GetLRDB()
+        db.lcPopupAnchor = {x=cx, y=cy}
     end
 end
 
 local function ReflowPopups()
-    -- The first visible popup keeps its current position (it's the user-movable anchor).
-    -- Every subsequent popup is rechained below the one above it.
+    -- Pass 1: collect visible popups and chain each below the previous.
+    -- The first visible popup is the user-movable anchor — its position is not touched.
+    local visibles = {}
     local prev = nil
     for i = 1, getn(popupOrder) do
         local sid = popupOrder[i]
-        local f = popupWindows[sid]
-        if f and f:IsShown() then
+        local pf  = popupWindows[sid]
+        if pf and pf:IsShown() then
             if not prev then
-                prev = f  -- anchor: do not touch its position
+                prev = pf
             else
-                f:ClearAllPoints()
-                f:SetPoint("TOP", prev, "BOTTOM", 0, -8)
-                prev = f
+                pf:ClearAllPoints()
+                pf:SetPoint("TOP", prev, "BOTTOM", 0, -8)
+                prev = pf
+            end
+            tinsert(visibles, pf)
+        end
+    end
+    -- Pass 2: if the bottom of the last popup is below the screen edge,
+    -- shift the anchor upward and re-chain inline (no recursion).
+    local vn = getn(visibles)
+    if vn == 0 then return end
+    local lastBot = visibles[vn]:GetBottom()
+    if lastBot and lastBot < 2 then          -- 2px safety margin
+        local anchor  = visibles[1]
+        local ax, ay  = anchor:GetCenter()
+        if ax and ay then
+            local shift  = 2 - lastBot       -- move up by deficit
+            local screenH = UIParent:GetHeight()
+            local newCy  = math.min(ay + shift, screenH - anchor:GetHeight() / 2)
+            anchor:ClearAllPoints()
+            anchor:SetPoint("CENTER", UIParent, "BOTTOMLEFT", ax, newCy)
+            -- re-chain remaining popups after the anchor
+            for vi = 2, vn do
+                visibles[vi]:ClearAllPoints()
+                visibles[vi]:SetPoint("TOP", visibles[vi-1], "BOTTOM", 0, -8)
             end
         end
     end
@@ -569,10 +607,26 @@ OpenVotePopup = function(s)
         return
     end
 
+    -- Count valid buttons first — needed to compute frame width & column layout
+    local valid = {}; local vc = 0
+    local buttons_pre = s.buttons or {}
+    for bi = 1, getn(buttons_pre) do
+        if buttons_pre[bi].name and buttons_pre[bi].name ~= "" then
+            vc = vc + 1; valid[vc] = buttons_pre[bi]
+        end
+    end
+    -- Layout constants
+    local BW, BH   = 100, 24
+    local COLS      = (vc > 3) and 2 or 1          -- 2 columns when 4+ buttons
+    local BTN_AREA_W = COLS * BW + (COLS - 1) * 4  -- 100 or 204
+    local LEFT_W    = 296                            -- comment EB width
+    local FRAME_W   = 12 + LEFT_W + 10 + BTN_AREA_W + 12
+    local RIGHT_OFF = 12 + BTN_AREA_W + 10          -- nameBtn right offset from frame right
+
     local f = CreateFrame("Frame", nil, UIParent)
     f:SetFrameStrata("FULLSCREEN_DIALOG")
-    f:SetWidth(310)
-    -- height is set dynamically below after counting vote buttons
+    f:SetWidth(FRAME_W)
+    -- height is set dynamically below
     f:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
         tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
@@ -629,6 +683,7 @@ OpenVotePopup = function(s)
     iconTexObj:SetTexture(s.iconPath or "Interface\\Icons\\INV_Misc_QuestionMark")
     local hl = ItemHyperlink(s.itemLink)
     iconBtn.hyperlink = hl
+    iconBtn.itemLink  = s.itemLink
     iconBtn:SetScript("OnEnter",function()
         if not this.hyperlink then return end
         GameTooltip:SetOwner(this,"ANCHOR_BOTTOM")
@@ -636,12 +691,17 @@ OpenVotePopup = function(s)
         GameTooltip:Show()
     end)
     iconBtn:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    iconBtn:SetScript("OnClick",function()
+        if IsControlKeyDown() and this.itemLink then
+            DressUpItemLink(this.itemLink)
+        end
+    end)
     f.iconBtn    = iconBtn
     f.iconTexObj = iconTexObj
 
     local nameBtn = CreateFrame("Button",nil,f)
     nameBtn:SetPoint("TOPLEFT",iconBtn,"TOPRIGHT",6,0)
-    nameBtn:SetPoint("RIGHT",f,"RIGHT",-12,0)
+    nameBtn:SetPoint("RIGHT",f,"RIGHT",-RIGHT_OFF,0)
     nameBtn:SetHeight(36)
     nameBtn:EnableMouse(true)
     local nameFS = nameBtn:CreateFontString(nil,"OVERLAY","GameFontHighlight")
@@ -650,6 +710,7 @@ OpenVotePopup = function(s)
     nameFS:SetJustifyV("MIDDLE")
     nameFS:SetText(s.itemLink or "Unknown")
     nameBtn.hyperlink = hl
+    nameBtn.itemLink  = s.itemLink
     nameBtn:SetScript("OnEnter",function()
         if not this.hyperlink then return end
         GameTooltip:SetOwner(this,"ANCHOR_BOTTOM")
@@ -657,6 +718,11 @@ OpenVotePopup = function(s)
         GameTooltip:Show()
     end)
     nameBtn:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    nameBtn:SetScript("OnClick",function()
+        if IsControlKeyDown() and this.itemLink then
+            DressUpItemLink(this.itemLink)
+        end
+    end)
     f.nameBtn = nameBtn
     f.nameFS  = nameFS
 
@@ -665,29 +731,24 @@ OpenVotePopup = function(s)
     commentLbl:SetText("Comment (optional):")
     commentLbl:SetTextColor(0.6,0.6,0.65,1)
 
-    local commentEB = MakeEB(f, 286, 20)
+    -- comment EB spans left content area (x=12 to x=308, width=296)
+    local commentEB = MakeEB(f, 296, 20)
     commentEB:SetPoint("TOPLEFT",commentLbl,"BOTTOMLEFT",0,-3)
     f.commentEB = commentEB
 
-    -- Build vote buttons list first so we know how many rows we need
-    local valid = {}; local vc = 0
-    local buttons = s.buttons or {}
-    for bi = 1, getn(buttons) do
-        if buttons[bi].name and buttons[bi].name ~= "" then
-            vc = vc + 1; valid[vc] = buttons[bi]
-        end
-    end
-    local BW, BH, COLS = 88, 24, 3
-    local btnRows    = math.max(1, ceil(vc / COLS))
-    local btnAreaH   = btnRows * BH + (btnRows - 1) * 4
-    -- Frame height: top(10) + title(18) + gap(6) + icon(36) + gap(8) +
-    --               commentLbl(14) + gap(3) + commentEB(20) + gap(8) +
-    --               buttons + gap(8) + statusFS(14) + bottom(10) = 155 + btnAreaH
-    f:SetHeight(155 + btnAreaH)
+    -- Button grid: 1 column for ≤3 buttons, 2 columns for 4+
+    -- Row-major: Btn1 Btn2 / Btn3 Btn4 / Btn5 Btn6
+    local btnRows  = math.max(1, ceil(vc / COLS))
+    local btnAreaH = btnRows * BH + (btnRows - 1) * 4
+    -- Left column height: icon(36)+gap(8)+lbl(14)+gap(3)+EB(20) = 81
+    local contentH = math.max(81, btnAreaH)
+    -- Frame: top(10)+title(18)+gap(6)+content+gap(8)+status(14)+bottom(10) = 66+content
+    f:SetHeight(66 + contentH)
 
+    -- Button area anchored top-right, aligned with the icon row (y=-34)
     local btnArea = CreateFrame("Frame",nil,f)
-    btnArea:SetPoint("TOPLEFT",commentEB,"BOTTOMLEFT",0,-8)
-    btnArea:SetPoint("TOPRIGHT",f,"TOPRIGHT",-12,0)
+    btnArea:SetPoint("TOPRIGHT",f,"TOPRIGHT",-12,-34)
+    btnArea:SetWidth(BTN_AREA_W)
     btnArea:SetHeight(btnAreaH)
     f.btnArea = btnArea
     f.voteBtns = {}
@@ -698,14 +759,14 @@ OpenVotePopup = function(s)
     statusFS:SetText("Waiting for your vote...")
     f.statusFS = statusFS
     for bi = 1, vc do
-        local col = mmod(bi-1, COLS)
-        local row = floor((bi-1)/COLS)
-        local rm  = valid[bi].rollMax or 0
+        local rm   = valid[bi].rollMax or 0
         local isDV = valid[bi].isDoubleVote and true or false
         local label = valid[bi].name
         if isDV then label = label.." |cFF88CCFF(DV)|r" end
         if rm > 0 then label = label.." |cFFFFD700(R"..rm..")|r" end
         local vb = MakeBtn(f.btnArea, label, BW, BH)
+        local col = mmod(bi - 1, COLS)
+        local row = floor((bi - 1) / COLS)
         vb:SetPoint("TOPLEFT",f.btnArea,"TOPLEFT", col*(BW+4), -row*(BH+4))
         vb.btnIdx       = bi
         vb.btnName      = valid[bi].name
@@ -782,6 +843,16 @@ OpenVotePopup = function(s)
     -- Position: first popup uses the saved anchor; others attach below the last one
     local n = getn(popupOrder)
     if n == 0 then
+        -- Sync runtime locals from DB so saved position survives reloads
+        -- Only apply if the user has previously dragged the frame (pa ~= nil)
+        local pa = GetLRDB().lcPopupAnchor
+        if pa and pa.x ~= nil then
+            popupAnchorPt    = "CENTER"
+            popupAnchorRelPt = "BOTTOMLEFT"
+            popupAnchorX     = pa.x
+            popupAnchorY     = pa.y or 80
+        end
+        -- else: file-level defaults ("CENTER","CENTER",0,80) place it in screen center
         f:SetPoint(popupAnchorPt, UIParent, popupAnchorRelPt, popupAnchorX, popupAnchorY)
     else
         local lastF = popupWindows[popupOrder[n]]
@@ -823,7 +894,12 @@ local function CreateCouncilFrame()
     local f = CreateFrame("Frame","ART_LC_CouncilFrame",UIParent)
     f:SetFrameStrata("FULLSCREEN_DIALOG")
     f:SetWidth(650); f:SetHeight(440)
-    f:SetPoint("CENTER",UIParent,"CENTER",200,0)
+    local _ca = GetLRDB().lcCouncilAnchor
+    if _ca and _ca.x ~= nil then
+        f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", _ca.x, _ca.y)
+    else
+        f:SetPoint("CENTER", UIParent, "CENTER", 200, 0)
+    end
     f:SetBackdrop({bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
         tile=true,tileSize=16,edgeSize=16,insets={left=4,right=4,top=4,bottom=4}})
@@ -832,7 +908,14 @@ local function CreateCouncilFrame()
     f:SetMovable(true); f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart",function() this:StartMoving() end)
-    f:SetScript("OnDragStop", function() this:StopMovingOrSizing() end)
+    f:SetScript("OnDragStop", function()
+        this:StopMovingOrSizing()
+        local cx, cy = this:GetCenter()
+        if cx and cy then
+            local db = GetLRDB()
+            db.lcCouncilAnchor = {x=cx, y=cy}
+        end
+    end)
     f:Hide()
 
     -- X close button (top-right corner)
@@ -896,6 +979,11 @@ local function CreateCouncilFrame()
         GameTooltip:Show()
     end)
     iconBtn:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    iconBtn:SetScript("OnClick",function()
+        if IsControlKeyDown() and this.itemLink then
+            DressUpItemLink(this.itemLink)
+        end
+    end)
     f.iconBtn    = iconBtn
     f.iconTexObj = iconTexObj
 
@@ -905,7 +993,8 @@ local function CreateCouncilFrame()
     nameBtn:SetHeight(36)
     nameBtn:EnableMouse(true)
     local nameFS = nameBtn:CreateFontString(nil,"OVERLAY","GameFontHighlight")
-    nameFS:SetAllPoints(nameBtn)
+    nameFS:SetPoint("TOPLEFT",    nameBtn, "TOPLEFT",  0, 0)
+    nameFS:SetPoint("BOTTOMRIGHT",nameBtn, "BOTTOMRIGHT", -232, 0)
     nameFS:SetJustifyH("LEFT")
     nameFS:SetJustifyV("MIDDLE")
     nameBtn:SetScript("OnEnter",function()
@@ -915,8 +1004,24 @@ local function CreateCouncilFrame()
         GameTooltip:Show()
     end)
     nameBtn:SetScript("OnLeave",function() GameTooltip:Hide() end)
+    nameBtn:SetScript("OnClick",function()
+        if IsControlKeyDown() and this.itemLink then
+            DressUpItemLink(this.itemLink)
+        end
+    end)
     f.nameBtn = nameBtn
     f.nameFS  = nameFS
+
+    -- Top DV leader line (right side of item row, same blue as DV column)
+    local dvTopFS = f:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+    dvTopFS:SetWidth(224)
+    dvTopFS:SetPoint("RIGHT",  f, "RIGHT", -12, 0)
+    dvTopFS:SetPoint("TOP",    nameBtn, "TOP", 0, 0)
+    dvTopFS:SetHeight(36)
+    dvTopFS:SetJustifyH("RIGHT")
+    dvTopFS:SetJustifyV("MIDDLE")
+    dvTopFS:SetText("")
+    f.dvTopFS = dvTopFS
 
     -- column headers (fixed positions; optional ones stored for show/hide)
     local function MakeHdr(xOff, txt)
@@ -1322,9 +1427,52 @@ UpdateCouncilNav = function()
         local hl = ItemHyperlink(cs.itemLink)
         councilFrame.iconTexObj:SetTexture(cs.iconPath or "Interface\\Icons\\INV_Misc_QuestionMark")
         councilFrame.iconBtn.hyperlink = hl
+        councilFrame.iconBtn.itemLink  = cs.itemLink
         councilFrame.nameBtn.hyperlink = hl
+        councilFrame.nameBtn.itemLink  = cs.itemLink
         councilFrame.nameFS:SetText(cs.itemLink or "Unknown")
         councilFrame.titleFS:SetText("Loot Council")
+    end
+
+    -- Top DV leader: player with highest roll among dVotes
+    if councilFrame.dvTopFS then
+        local dvTopName, dvTopBtnName, dvTopRoll = nil, nil, -1
+        if cs and cs.dVotes then
+            for name, dv in pairs(cs.dVotes) do
+                if (dv.roll or 0) > dvTopRoll then
+                    dvTopRoll    = dv.roll or 0
+                    dvTopName    = name
+                    dvTopBtnName = dv.btnName or ""
+                end
+            end
+        end
+        if dvTopName then
+            -- Class color for the name
+            local roster = GetRosterCache()
+            local classUpper = roster[dvTopName] and roster[dvTopName].class
+            -- CLASS_SHORT stores 3-letter abbreviations, not full uppercase class names
+            -- Try to get full class from raid roster directly
+            local nameColor = "|cFFCCCCCC"
+            for ri = 1, GetNumRaidMembers() do
+                local rname, _, _, _, _, fileName = GetRaidRosterInfo(ri)
+                if rname and rname == dvTopName and fileName then
+                    local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[string.upper(fileName)]
+                    if cc then
+                        nameColor = string.format("|cFF%02X%02X%02X",
+                            math.floor((cc.r or 1)*255),
+                            math.floor((cc.g or 1)*255),
+                            math.floor((cc.b or 1)*255))
+                    end
+                    break
+                end
+            end
+            local rollStr = dvTopRoll > 0 and " Rolled "..dvTopRoll or ""
+            councilFrame.dvTopFS:SetText(
+                nameColor..dvTopName.."|r"
+                .."|cFF88CCFF DV("..dvTopBtnName..")"..rollStr.."|r")
+        else
+            councilFrame.dvTopFS:SetText("")
+        end
     end
 end
 
@@ -1386,7 +1534,7 @@ SimulateLoot = function()
         }
         AddSession(s)
         local openMsg = "LC_OPEN^"..sid.."^0^"..item.itemLink.."^"..tostring(item.quality)
-                        .."^"..iconPath..EncodeLCButtons(buttons)
+                        .."^"..iconPath.."^"..EncodeOfficers(prof.officers)..EncodeLCButtons(buttons)
         SendLC(openMsg)
         DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFF[ART-LC]|r [Sim] "..item.itemLink)
     end
@@ -1447,7 +1595,7 @@ end)
 -- ShouldTrigger
 -- ============================================================
 local function ShouldTrigger(quality, itemLink, prof)
-    if not prof or prof.mode ~= "lootcouncil" then return false end
+    if not prof or (prof.mode ~= "lootcouncil" and prof.mode ~= "dkp") then return false end
     -- Specific item IDs always trigger regardless of mode
     if prof.triggerItemIds and itemLink then
         local _, _, idStr = strfind(itemLink, "item:(%d+):")
@@ -1477,6 +1625,35 @@ OnLCMessage = function(sender, msg)
     if tag == "LC_OPEN" then
         local sid      = parts[2]
         if allSessions[sid] then return end  -- already registered (e.g. ML-side sim sent to self)
+        -- Security: only accept LC_OPEN from the actual Master Looter or Raid Leader
+        do
+            local validSender = false
+            local lootMethod, partyML, raidML = GetLootMethod()
+            if lootMethod == "master" then
+                -- Check master looter name
+                local mlUnit
+                if raidML ~= nil then
+                    mlUnit = "raid"..raidML
+                elseif partyML ~= nil then
+                    mlUnit = (partyML == 0) and "player" or ("party"..partyML)
+                end
+                if mlUnit and UnitName(mlUnit) == sender then
+                    validSender = true
+                end
+            end
+            if not validSender then
+                -- Also accept from the raid leader as fallback
+                local numRaid = GetNumRaidMembers()
+                for ri = 1, numRaid do
+                    local rname, rrank = GetRaidRosterInfo(ri)
+                    if rname == sender and rrank == 2 then
+                        validSender = true
+                        break
+                    end
+                end
+            end
+            if not validSender then return end
+        end
         local slot     = tonumber(parts[3])
         local itemLink = parts[4]
         local quality  = tonumber(parts[5]) or 0
@@ -1486,9 +1663,27 @@ OnLCMessage = function(sender, msg)
         local myName = UnitName("player")
         local iconPath = (parts[6] and parts[6] ~= "") and parts[6]
                          or "Interface\\Icons\\INV_Misc_QuestionMark"
+        -- parts[7] = officers (semicolon-separated), parts[8+] = buttons
+        -- Older messages (no officers field) have buttons at parts[7] — detected by presence of "~"
+        local officers = {}
+        local btnStart = 7
+        if parts[7] and string.find(parts[7], "~", 1, true) == nil then
+            -- No "~" → this is the officers field (names never contain "~")
+            local offStr = parts[7] or ""
+            if offStr ~= "" then
+                for n in string.gfind(offStr..";", "([^;]*);") do
+                    if n ~= "" then tinsert(officers, n) end
+                end
+            end
+            btnStart = 8
+        end
+        -- Fall back to local profile officers if none transmitted (backward compat)
+        if getn(officers) == 0 then
+            officers = (prof and prof.officers) or {}
+        end
         local buttons
-        if pc >= 7 then
-            buttons = DecodeLCButtons(parts, 7)
+        if pc >= btnStart then
+            buttons = DecodeLCButtons(parts, btnStart)
         end
         if not buttons or getn(buttons) == 0 then
             buttons = (prof and prof.buttons) or {
@@ -1497,8 +1692,7 @@ OnLCMessage = function(sender, msg)
                 {name="Pass",      priority=6},
             }
         end
-        local timer    = (prof and prof.timer)    or 60
-        local officers = (prof and prof.officers) or {}
+        local timer = (prof and prof.timer) or 60
         local newS = {
             sid          = sid,
             slot         = slot,
@@ -1600,7 +1794,7 @@ OnLCMessage = function(sender, msg)
             s.dVotes[sender] = {btn=btnIdx, btnName=btnName, comment=comment, roll=rollVal, spec=spec}
         end
         if councilFrame and councilFrame:IsShown() and GetCouncilSession() == s then
-            RefreshCouncilRows()
+            UpdateCouncilNav(); RefreshCouncilRows()
         end
 
     elseif tag == "LC_CLOSE" then
@@ -1653,6 +1847,7 @@ lcLootFrame:SetScript("OnEvent",function()
                             quality      = quality,
                             iconPath     = iconPath,
                             votes        = {},
+                            dVotes       = {},
                             councilVotes = {},
                             buttons      = prof.buttons or {},
                             isML         = true,
@@ -1662,7 +1857,7 @@ lcLootFrame:SetScript("OnEvent",function()
                         }
                         AddSession(newS)
                         local openMsg = "LC_OPEN^"..sid.."^"..slot.."^"..(itemLink or "").."^"..quality
-                                        .."^"..iconPath..EncodeLCButtons(prof.buttons or {})
+                                        .."^"..iconPath.."^"..EncodeOfficers(prof.officers)..EncodeLCButtons(prof.buttons or {})
                         SendLC(openMsg)
                         OpenVotePopup(newS)
                         if not councilFrame or not councilFrame:IsShown() then
@@ -1748,8 +1943,7 @@ end)
 -- Zone binding
 -- ============================================================
 local function ApplyLRZoneBinding()
-    local zk = GetCurrentLRZoneKey()
-    if not zk then return end
+    local zk = GetCurrentLRZoneKey()   -- never nil (falls back to "outraid")
     local db = GetLRDB()
     local bp = db.lrZoneBindings[zk]
     if bp and db.lootProfiles[bp] and db.activeLRProfile ~= bp then
@@ -2515,18 +2709,21 @@ local function CreateLRRightPanel(panel)
     local alQLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     alQLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-668)
     alQLbl:SetText("Max Quality to auto-loot:"); alQLbl:SetTextColor(0.65,0.65,0.7,1)
-    local alQEB = MakeEB(lcF,40,18)
-    alQEB:SetPoint("LEFT",alQLbl,"RIGHT",6,0)
-    local function SaveAlQ()
+    -- Cycle button — same pattern as Trigger quality button
+    local alQBtn = MakeBtn(lcF,"",110,20)
+    alQBtn:SetPoint("LEFT",alQLbl,"RIGHT",6,0)
+    alQBtn._qualIdx = 3   -- default: index 3 = Uncommon (quality 2)
+    alQBtn:SetScript("OnClick",function()
+        this._qualIdx = math.mod(this._qualIdx, 6) + 1
+        local qval = this._qualIdx - 1
         local p = GetActiveLRProfile()
         if p then
             if not p.autoLoot then p.autoLoot = {} end
-            local v = tonumber(alQEB:GetText())
-            if v then p.autoLoot.maxQuality = math.max(0,math.min(5,floor(v))) end
+            p.autoLoot.maxQuality = qval
         end
-    end
-    alQEB:SetScript("OnEnterPressed",function() SaveAlQ(); this:ClearFocus() end)
-    alQEB:SetScript("OnEditFocusLost",function() SaveAlQ() end)
+        this.label:SetText(QUALITY_COLORS[this._qualIdx]..QUALITY_NAMES[this._qualIdx].."|r")
+    end)
+    alQBtn.label:SetText(QUALITY_COLORS[3]..QUALITY_NAMES[3].."|r")
 
     -- Store refs for LoadLCProfile
     lcF.trigQualCB = trigQualCB
@@ -2539,7 +2736,7 @@ local function CreateLRRightPanel(panel)
     lcF.timerEB   = timerEB
     lcF.offEB     = offEB
     lcF.alCB      = alCB
-    lcF.alQEB     = alQEB
+    lcF.alQBtn    = alQBtn
 
     local function LoadLCProfile(prof)
         if not prof then return end
@@ -2586,7 +2783,9 @@ local function CreateLRRightPanel(panel)
 
         local al = prof.autoLoot or {}
         lcF.alCB:SetChecked(al.enabled)
-        lcF.alQEB:SetText(tostring(al.maxQuality or 2))
+        local alqidx = (al.maxQuality or 2) + 1
+        lcF.alQBtn._qualIdx = alqidx
+        lcF.alQBtn.label:SetText(QUALITY_COLORS[alqidx]..QUALITY_NAMES[alqidx].."|r")
 
         EnsureCouncilSettings(prof)
         local cols2 = prof.councilCols
