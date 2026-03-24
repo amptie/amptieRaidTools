@@ -89,6 +89,27 @@ local function RequestSpecs()
     SendAddonMessage(ROLE_PREFIX, "R", ch)
 end
 
+-- ── 5-second poll for spec broadcasts ─────────────────────────
+-- RAID_ROSTER_UPDATE fires many times during a pull (zone-ins, sub-group
+-- reassignments, deaths …).  A dirty flag + 5 s timer collapses all of
+-- those into one BroadcastOwnSpec + RequestSpecs pair per 5 s window.
+local rlBroadcastDirty = false
+local RL_POLL_INTERVAL = 5.0
+local rlPollTimer      = 0
+
+local rlPollFrame = CreateFrame("Frame", nil, UIParent)
+rlPollFrame:SetScript("OnUpdate", function()
+    local dt = arg1
+    rlPollTimer = rlPollTimer + dt
+    if rlPollTimer < RL_POLL_INTERVAL then return end
+    rlPollTimer = 0
+    if rlBroadcastDirty then
+        rlBroadcastDirty = false
+        BroadcastOwnSpec()
+        RequestSpecs()
+    end
+end)
+
 -- ============================================================
 -- Panel refresh (forward-declared, set during Init)
 -- ============================================================
@@ -206,8 +227,7 @@ rlEventFrame:SetScript("OnEvent", function()
                 if cl then rosterClasses[me] = string.upper(cl) end
             end
         end
-        BroadcastOwnSpec()
-        RequestSpecs()
+        rlBroadcastDirty = true   -- handled by 5s poll timer
         RefreshPanel()
     end
 end)

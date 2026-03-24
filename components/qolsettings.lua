@@ -9,14 +9,14 @@ local strfind = string.find
 -- Database defaults
 -- ============================================================
 local QOL_DEFAULTS = {
-    GINV         = true,   -- Accept invites from guild mates
-    FINV         = true,   -- Accept invites from friends
+    GINV         = false,  -- Accept invites from guild mates
+    FINV         = false,  -- Accept invites from friends
     SINV         = false,  -- Accept invites from strangers
-    DINV         = true,   -- Accept invites when idle in BG or queue
-    EBG          = true,   -- Auto enter battleground
-    LBG          = true,   -- Auto leave battleground when battle ends
-    QBG          = true,   -- Re-queue after leaving BG
-    RBG          = true,   -- Auto release in BG
+    DINV         = false,  -- Accept invites when idle in BG or queue
+    EBG          = false,  -- Auto enter battleground
+    LBG          = false,  -- Auto leave battleground when battle ends
+    QBG          = false,  -- Re-queue after leaving BG
+    RBG          = false,  -- Auto release in BG
     AQUE         = false,  -- Leader queue announce
     SBG          = false,  -- Block BG quest sharing
     WORLDDUNGEON = false,  -- Mute world chat in dungeons
@@ -24,14 +24,14 @@ local QOL_DEFAULTS = {
     WORLDBG      = false,  -- Mute world chat in battlegrounds
     WORLDUNCHECK = false,  -- Mute world chat permanently
     SUMM         = false,  -- Auto accept summon
-    RIGHT        = true,   -- Improved right click (item into trade/mail/AH)
+    RIGHT        = false,  -- Improved right click (item into trade/mail/AH)
     SHIFTSPLIT   = false,  -- Easy stack split/merge with Shift+click
     CAM          = false,  -- Extended camera distance
     DUEL         = false,  -- Auto decline duels
     REZ          = false,  -- Auto accept instance resurrection
-    GOSSIP       = true,   -- Auto process gossip (single option)
-    DISMOUNT     = true,   -- Auto dismount on action
-    AUTOSTANCE   = true,   -- Auto stance on action
+    GOSSIP       = false,  -- Auto process gossip (single option)
+    DISMOUNT     = false,  -- Auto dismount on action
+    AUTOSTANCE   = false,  -- Auto stance on action
     QUESTREPEAT  = false,  -- Quest Repeat with CTRL
 }
 
@@ -181,6 +181,9 @@ local function QoL_ZoneCheck()
     end
 end
 
+-- Quest Repeat shared state (declared here so QoL_HandleGossip can access it)
+local qrData = { quest = nil, item = nil }
+
 -- ============================================================
 -- Camera distance
 -- ============================================================
@@ -194,6 +197,22 @@ end
 -- Gossip auto-select
 -- ============================================================
 local function QoL_HandleGossip()
+    -- QUESTREPEAT: find the remembered quest in gossip buttons and click it
+    if QDB("QUESTREPEAT") and IsControlKeyDown() and qrData.quest then
+        for i = 1, NUMGOSSIPBUTTONS do
+            local btn = getglobal("GossipTitleButton" .. i)
+            if btn and btn:IsVisible() and btn:GetText() == qrData.quest then
+                btn:Click()
+                return
+            end
+        end
+        -- Quest not found in gossip → reset so we don't loop forever
+        qrData.quest = nil
+        qrData.item  = nil
+        return
+    end
+
+    -- GOSSIP auto-select: single non-interactive option
     if not QDB("GOSSIP") then return end
     local opts = { GetGossipOptions() }
     -- GetGossipOptions returns alternating text, type pairs
@@ -316,62 +335,85 @@ UseContainerItem = function(bag, slot)
 end
 
 -- ============================================================
--- Quest Repeat hooks
+-- Quest Repeat hooks  (mirrors QuestRepeat addon logic exactly)
+-- PostHook pattern: original always runs first so UI elements
+-- are fully initialised before we interact with them.
 -- ============================================================
 local _OrigQuestDetailOnShow   = QuestFrameDetailPanel_OnShow
 local _OrigQuestProgressOnShow = QuestFrameProgressPanel_OnShow
 local _OrigQuestRewardOnShow   = QuestFrameRewardPanel_OnShow
-local _OrigQuestRewardOnClick  = QuestRewardCompleteButton_OnClick
 local _OrigQuestGreetOnShow    = QuestFrameGreetingPanel_OnShow
 
-local questRepeatLastChoice = 1
-
+-- Detail panel: quest offered → save name, accept if CTRL held
 QuestFrameDetailPanel_OnShow = function()
     if _OrigQuestDetailOnShow then _OrigQuestDetailOnShow() end
-    if QDB("QUESTREPEAT") and IsControlKeyDown() then
+    if not QDB("QUESTREPEAT") then return end
+    if QuestTitleText then
+        qrData.quest = QuestTitleText:GetText()
+    end
+    if IsControlKeyDown() then
         AcceptQuest()
     end
 end
 
+-- Progress panel: call CompleteQuest() directly — avoids the gold-payment
+-- StaticPopup that QuestFrameCompleteButton:Click() triggers internally.
 QuestFrameProgressPanel_OnShow = function()
     if _OrigQuestProgressOnShow then _OrigQuestProgressOnShow() end
-    if QDB("QUESTREPEAT") and IsControlKeyDown() then
-        if QuestFrameCompleteButton and QuestFrameCompleteButton:IsShown() then
-            QuestFrameCompleteButton:Click()
-        end
+    if not QDB("QUESTREPEAT") then return end
+    if IsControlKeyDown() then
+        CompleteQuest()
     end
 end
 
+-- Reward panel: call GetQuestReward() directly — avoids relying on
+-- QuestRewardCompleteButton_OnClick global which may be nil at load time.
 QuestFrameRewardPanel_OnShow = function()
     if _OrigQuestRewardOnShow then _OrigQuestRewardOnShow() end
-    if QDB("QUESTREPEAT") and IsControlKeyDown() then
-        if GetNumQuestChoices() > 0 then
-            GetQuestReward(questRepeatLastChoice)
+    if not QDB("QUESTREPEAT") or not IsControlKeyDown() then return end
+    local noChoice = QuestFrameRewardPanel.itemChoice == 0
+    if noChoice then
+        GetQuestReward(0)
+    elseif qrData.item then
+        QuestFrameRewardPanel.itemChoice = qrData.item
+        GetQuestReward(qrData.item)
+    end
+    -- First time with item choices: player clicks manually; button script below saves it
+end
+
+-- Hook reward button frame script directly (safer than global function hook).
+-- Saves the player's item choice for future CTRL cycles.
+QuestFrameCompleteQuestButton:SetScript("OnClick", function()
+    if QDB("QUESTREPEAT") then
+        if IsControlKeyDown() and qrData.item then
+            QuestFrameRewardPanel.itemChoice = qrData.item
         else
-            GetQuestReward(1)
+            qrData.item = QuestFrameRewardPanel.itemChoice
+            if QuestRewardTitleText then
+                qrData.quest = QuestRewardTitleText:GetText()
+            end
         end
     end
-end
+    -- Always complete the quest (mirrors what the original script does)
+    GetQuestReward(QuestFrameRewardPanel.itemChoice or 0)
+end)
 
-QuestRewardCompleteButton_OnClick = function()
-    questRepeatLastChoice = QuestFrameRewardPanel.itemChoice or 1
-    if _OrigQuestRewardOnClick then _OrigQuestRewardOnClick() end
-end
-
+-- Greeting panel: click the remembered quest's title button directly (same as QuestRepeat)
 QuestFrameGreetingPanel_OnShow = function()
     if _OrigQuestGreetOnShow then _OrigQuestGreetOnShow() end
-    if not QDB("QUESTREPEAT") or not IsControlKeyDown() then return end
-    local numActive = GetNumActiveQuests()
-    for i = 1, numActive do
-        local title, isComplete = GetActiveTitle(i)
-        if isComplete then
-            SelectActiveQuest(i)
-            return
+    if not QDB("QUESTREPEAT") then return end
+    if IsControlKeyDown() and qrData.quest then
+        for i = 1, MAX_NUM_QUESTS do
+            local btn = getglobal("QuestTitleButton" .. i)
+            if btn and btn:IsVisible() and btn:GetText() == qrData.quest then
+                btn:Click()
+                return
+            end
         end
-    end
-    local numAvail = GetNumAvailableQuests()
-    if numAvail == 1 then
-        SelectAvailableQuest(1)
+    else
+        -- CTRL released: reset so next session starts fresh
+        qrData.quest = nil
+        qrData.item  = nil
     end
 end
 

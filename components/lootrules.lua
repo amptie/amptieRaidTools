@@ -235,10 +235,10 @@ local function LRExportProfile(prof)
     for bi = 1, getn(btns) do
         local b = btns[bi]
         tinsert(btnParts,
-            (b.name or "") .. "|" ..
-            tostring(b.priority or bi) .. "|" ..
-            tostring(b.rollMax or 100) .. "|" ..
-            ((b.dv and "1") or "0"))
+            (b.name or "") .. "^" ..
+            tostring(b.priority or bi) .. "^" ..
+            tostring(b.rollMax or 0) .. "^" ..
+            (((b.isDoubleVote or b.dv) and "1") or "0"))
     end
     local btnStr = ""
     for pi = 1, getn(btnParts) do
@@ -311,23 +311,23 @@ local function LRImportProfile(str)
     if btnStr ~= "" then
         local btnParts = LRSplit(btnStr, ";")
         for bi = 1, getn(btnParts) do
-            local bp = LRSplit(btnParts[bi], "|")
+            local bp = LRSplit(btnParts[bi], "^")
             local bname = bp[1] or ""
             if bname ~= "" then
                 tinsert(buttons, {
-                    name     = bname,
-                    priority = tonumber(bp[2]) or bi,
-                    rollMax  = tonumber(bp[3]) or 100,
-                    dv       = (bp[4] == "1"),
+                    name          = bname,
+                    priority      = tonumber(bp[2]) or bi,
+                    rollMax       = tonumber(bp[3]) or 0,
+                    isDoubleVote  = (bp[4] == "1"),
                 })
             end
         end
     end
     if getn(buttons) == 0 then
         buttons = {
-            {name="Main Spec",priority=1,rollMax=100,dv=false},
-            {name="Off Spec", priority=2,rollMax=100,dv=false},
-            {name="Pass",     priority=6,rollMax=10, dv=false},
+            {name="Main Spec",priority=1,rollMax=0,isDoubleVote=false},
+            {name="Off Spec", priority=2,rollMax=0,isDoubleVote=false},
+            {name="Pass",     priority=6,rollMax=0,isDoubleVote=false},
         }
     end
     return {
@@ -659,12 +659,13 @@ OpenVotePopup = function(s)
     local titleFS = f:CreateFontString(nil,"OVERLAY","GameFontNormal")
     titleFS:SetPoint("TOPLEFT",f,"TOPLEFT",12,-10)
     titleFS:SetTextColor(1,0.82,0,1)
+    local modeLabel = s.isDKP and "DKP – Bid" or "Loot Council – Vote"
     if s.isSim then
         local pos, tot = 1, getn(sessionOrder)
         for i = 1, tot do if sessionOrder[i] == s.sid then pos = i; break end end
-        titleFS:SetText("Loot Council – Vote  |cFF33CCFF[Sim "..pos.."/"..tot.."]|r")
+        titleFS:SetText(modeLabel.."  |cFF33CCFF[Sim "..pos.."/"..tot.."]|r")
     else
-        titleFS:SetText("Loot Council – Vote")
+        titleFS:SetText(modeLabel)
     end
     f.titleFS = titleFS
 
@@ -726,8 +727,24 @@ OpenVotePopup = function(s)
     f.nameBtn = nameBtn
     f.nameFS  = nameFS
 
+    -- DKP bid field (only for DKP sessions)
+    local dkpBidEB = nil
+    if s.isDKP then
+        local dkpBidLbl = f:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+        dkpBidLbl:SetPoint("TOPLEFT",iconBtn,"BOTTOMLEFT",0,-8)
+        dkpBidLbl:SetText("DKP Bid:")
+        dkpBidLbl:SetTextColor(0.4,0.75,1,1)
+        dkpBidEB = MakeEB(f,70,20)
+        dkpBidEB:SetPoint("TOPLEFT",dkpBidLbl,"BOTTOMLEFT",0,-3)
+        f.dkpBidEB = dkpBidEB
+    end
+
     local commentLbl = f:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    commentLbl:SetPoint("TOPLEFT",iconBtn,"BOTTOMLEFT",0,-8)
+    if s.isDKP and dkpBidEB then
+        commentLbl:SetPoint("TOPLEFT",dkpBidEB,"BOTTOMLEFT",0,-8)
+    else
+        commentLbl:SetPoint("TOPLEFT",iconBtn,"BOTTOMLEFT",0,-8)
+    end
     commentLbl:SetText("Comment (optional):")
     commentLbl:SetTextColor(0.6,0.6,0.65,1)
 
@@ -740,8 +757,9 @@ OpenVotePopup = function(s)
     -- Row-major: Btn1 Btn2 / Btn3 Btn4 / Btn5 Btn6
     local btnRows  = math.max(1, ceil(vc / COLS))
     local btnAreaH = btnRows * BH + (btnRows - 1) * 4
-    -- Left column height: icon(36)+gap(8)+lbl(14)+gap(3)+EB(20) = 81
-    local contentH = math.max(81, btnAreaH)
+    -- Left column height: DKP adds bid row (lbl14+gap3+EB20+gap8) = 45px extra over 81
+    local LEFT_H = s.isDKP and 126 or 81
+    local contentH = math.max(LEFT_H, btnAreaH)
     -- Frame: top(10)+title(18)+gap(6)+content+gap(8)+status(14)+bottom(10) = 66+content
     f:SetHeight(66 + contentH)
 
@@ -762,8 +780,6 @@ OpenVotePopup = function(s)
         local rm   = valid[bi].rollMax or 0
         local isDV = valid[bi].isDoubleVote and true or false
         local label = valid[bi].name
-        if isDV then label = label.." |cFF88CCFF(DV)|r" end
-        if rm > 0 then label = label.." |cFFFFD700(R"..rm..")|r" end
         local vb = MakeBtn(f.btnArea, label, BW, BH)
         local col = mmod(bi - 1, COLS)
         local row = floor((bi - 1) / COLS)
@@ -828,11 +844,12 @@ OpenVotePopup = function(s)
                 RandomRoll(1, this.rollMax)
             else
                 local mySpec = (AmptieRaidTools_PlayerInfo and AmptieRaidTools_PlayerInfo.spec) or ""
-                local msg = "LC_VOTE^"..sess.sid.."^"..this.btnIdx.."^"..comment.."^0^"..mySpec
+                local dkpBid = (sess.isDKP and f.dkpBidEB) and (tonumber(f.dkpBidEB:GetText()) or 0) or 0
+                local msg = "LC_VOTE^"..sess.sid.."^"..this.btnIdx.."^"..comment.."^0^"..mySpec.."^"..tostring(dkpBid)
                 SendLC(msg)
                 local myName = UnitName("player")
                 if myName then
-                    sess.votes[myName] = {btn=this.btnIdx, btnName=this.btnName, comment=comment, roll=0, spec=mySpec}
+                    sess.votes[myName] = {btn=this.btnIdx, btnName=this.btnName, comment=comment, roll=0, spec=mySpec, dkp=dkpBid}
                 end
                 f:Hide()
             end
@@ -888,7 +905,7 @@ end
 -- ============================================================
 local councilFrame = nil
 local CROW_H = 22
-local CROW_N = 22
+local CROW_N = 40
 
 local function CreateCouncilFrame()
     local f = CreateFrame("Frame","ART_LC_CouncilFrame",UIParent)
@@ -1037,7 +1054,7 @@ local function CreateCouncilFrame()
     f.hSpec     = MakeHdr(247, "Spec")
     f.hGuildRank= MakeHdr(299, "Rank")
     f.hPrio     = MakeHdr(351, "Prio")
-    MakeHdr(379, "Roll")
+    f.hRoll     = MakeHdr(379, "Roll")
     MakeHdr(411, "Comment")
     -- right-side headers
     local hCV = f:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
@@ -1232,6 +1249,9 @@ RefreshCouncilRows = function()
     if councilFrame.hSpec      then if cols.spec      then councilFrame.hSpec:Show()      else councilFrame.hSpec:Hide()      end end
     if councilFrame.hGuildRank then if cols.guildRank then councilFrame.hGuildRank:Show() else councilFrame.hGuildRank:Hide() end end
     if councilFrame.hPrio      then if cols.prio      then councilFrame.hPrio:Show()      else councilFrame.hPrio:Hide()      end end
+    if councilFrame.hRoll then
+        if cs and cs.isDKP then councilFrame.hRoll:SetText("DKP") else councilFrame.hRoll:SetText("Roll") end
+    end
 
     local seen = {}
     for name, vd in pairs(cs.votes) do
@@ -1240,46 +1260,62 @@ RefreshCouncilRows = function()
         local isPass  = string.lower(btnName) == "pass"
         local dvd     = cs.dVotes and cs.dVotes[name] or nil
         local hasDV   = dvd and (dvd.btnName or "") ~= ""
-        if not isPass or hasDV then
+        local rc = roster[name] or {}
+        seen[name] = true
+        -- Main vote row (skip if Pass with no DV)
+        if not isPass then
             ec = ec + 1
-            seen[name] = true
             local prio = 99
-            if not isPass and vd.btn and btnDefs[vd.btn] then
-                prio = btnDefs[vd.btn].priority or 99
-            end
-            local rc = roster[name] or {}
+            if vd.btn and btnDefs[vd.btn] then prio = btnDefs[vd.btn].priority or 99 end
             entries[ec] = {
                 player    = name,
-                btn       = not isPass and vd.btn or nil,
-                btnName   = not isPass and btnName or "",
+                btn       = vd.btn,
+                btnName   = btnName,
                 priority  = prio,
-                roll      = not isPass and (vd.roll or 0) or 0,
+                roll      = vd.roll or 0,
+                dkp       = vd.dkp or 0,
                 comment   = vd.comment or "",
                 spec      = vd.spec or "",
                 class     = rc.class or "",
                 guildRank = rc.guildRank or "",
-                dvBtnName = dvd and (dvd.btnName or "") or "",
-                dvRoll    = dvd and (dvd.roll or 0) or 0,
+                isDVRow   = false,
+            }
+        end
+        -- DV vote: separate row
+        if hasDV then
+            ec = ec + 1
+            entries[ec] = {
+                player    = name,
+                btn       = nil,
+                btnName   = dvd.btnName or "",
+                priority  = 99,
+                roll      = dvd.roll or 0,
+                dkp       = 0,
+                comment   = "",
+                spec      = dvd.spec or "",
+                class     = rc.class or "",
+                guildRank = rc.guildRank or "",
+                isDVRow   = true,
             }
         end
     end
     if cs.dVotes then
         for name, dvd in pairs(cs.dVotes) do
             if not seen[name] then
-                ec = ec + 1
                 local rc = roster[name] or {}
+                ec = ec + 1
                 entries[ec] = {
                     player    = name,
                     btn       = nil,
-                    btnName   = "",
+                    btnName   = dvd.btnName or "",
                     priority  = 99,
-                    roll      = 0,
+                    roll      = dvd.roll or 0,
+                    dkp       = 0,
                     comment   = "",
                     spec      = dvd.spec or "",
                     class     = rc.class or "",
                     guildRank = rc.guildRank or "",
-                    dvBtnName = dvd.btnName or "",
-                    dvRoll    = dvd.roll or 0,
+                    isDVRow   = true,
                 }
             end
         end
@@ -1288,6 +1324,7 @@ RefreshCouncilRows = function()
     local function sortVal(e, field)
         if field == "priority"  then return e.priority or 99
         elseif field == "roll"  then return -(e.roll or 0)
+        elseif field == "dkp"   then return -(e.dkp or 0)
         elseif field == "name"  then return e.player or ""
         elseif field == "class" then return e.class or ""
         elseif field == "guildRank" then return e.guildRank or ""
@@ -1311,23 +1348,26 @@ RefreshCouncilRows = function()
         local row = councilFrame.rows[ri]
         if ri <= ec then
             local e = entries[ri]
-            row.playerFS:SetText(e.player)
-            row.voteFS:SetText(e.btnName ~= "" and ("|cFF00FF00"..e.btnName.."|r") or "")
-            if e.dvBtnName and e.dvBtnName ~= "" then
-                local dvTxt = "|cFF88CCFF"..e.dvBtnName
-                if e.dvRoll > 0 then dvTxt = dvTxt.."("..e.dvRoll..")" end
-                row.dvoteFS:SetText(dvTxt.."|r")
+            if e.isDVRow then
+                row.playerFS:SetText("|cFF88CCFF"..e.player.." (DV)|r")
+                row.voteFS:SetText(e.btnName ~= "" and ("|cFF88CCFF"..e.btnName.."|r") or "")
             else
-                row.dvoteFS:SetText("")
+                row.playerFS:SetText(e.player)
+                row.voteFS:SetText(e.btnName ~= "" and ("|cFF00FF00"..e.btnName.."|r") or "")
             end
+            row.dvoteFS:SetText("")
             row.classFS:SetText(    cols.class     and e.class     or "")
             row.specFS:SetText(     cols.spec      and e.spec      or "")
             row.guildRankFS:SetText(cols.guildRank and e.guildRank or "")
             row.prioFS:SetText(cols.prio and (e.priority < 99 and tostring(e.priority) or "-") or "")
-            row.rollFS:SetText(e.roll > 0 and "|cFFFFD700"..tostring(e.roll).."|r" or "")
+            if cs and cs.isDKP then
+                row.rollFS:SetText(e.dkp > 0 and "|cFF88CCFF"..tostring(e.dkp).."|r" or "")
+            else
+                row.rollFS:SetText(e.roll > 0 and "|cFFFFD700"..tostring(e.roll).."|r" or "")
+            end
             row.commentFS:SetText(e.comment)
-            row.awardBtn.rowPlayer = e.player
-            if cs.isML or IsRaidLeader() then row.awardBtn:Show() else row.awardBtn:Hide() end
+            row.awardBtn.rowPlayer = e.isDVRow and "" or e.player
+            if not e.isDVRow and (cs.isML or IsRaidLeader()) then row.awardBtn:Show() else row.awardBtn:Hide() end
 
             -- Officer vote button
             local target = e.player
@@ -1358,7 +1398,7 @@ RefreshCouncilRows = function()
                 end
                 RefreshCouncilRows()
             end)
-            if cs.isOfficer or cs.isML then
+            if not e.isDVRow and (cs.isOfficer or cs.isML) then
                 row.cvoteBtn:Show()
             else
                 row.cvoteBtn:Hide()
@@ -1366,13 +1406,13 @@ RefreshCouncilRows = function()
 
             -- Count + tooltip
             local voters = {}; local vc2 = 0
-            if cv[target] then
+            if not e.isDVRow and cv[target] then
                 for voter in pairs(cv[target]) do
                     if cv[target][voter] then vc2=vc2+1; voters[vc2]=voter end
                 end
             end
             table.sort(voters)
-            row.countFS:SetText(vc2 > 0 and "|cFFFFD700"..tostring(vc2).."|r" or "0")
+            row.countFS:SetText(not e.isDVRow and (vc2 > 0 and "|cFFFFD700"..tostring(vc2).."|r" or "0") or "")
             row.countBtn:SetScript("OnEnter",function()
                 GameTooltip:SetOwner(this,"ANCHOR_TOPLEFT")
                 GameTooltip:AddLine("Officer Votes: "..tostring(vc2),1,1,1)
@@ -1431,48 +1471,73 @@ UpdateCouncilNav = function()
         councilFrame.nameBtn.hyperlink = hl
         councilFrame.nameBtn.itemLink  = cs.itemLink
         councilFrame.nameFS:SetText(cs.itemLink or "Unknown")
-        councilFrame.titleFS:SetText("Loot Council")
+        councilFrame.titleFS:SetText(cs and cs.isDKP and "DKP Bidding" or "Loot Council")
     end
 
-    -- Top DV leader: player with highest roll among dVotes
+    -- Top info: DKP shows highest bidder; LC shows top DV voter
     if councilFrame.dvTopFS then
-        local dvTopName, dvTopBtnName, dvTopRoll = nil, nil, -1
-        if cs and cs.dVotes then
-            for name, dv in pairs(cs.dVotes) do
-                if (dv.roll or 0) > dvTopRoll then
-                    dvTopRoll    = dv.roll or 0
-                    dvTopName    = name
-                    dvTopBtnName = dv.btnName or ""
-                end
-            end
-        end
-        if dvTopName then
-            -- Class color for the name
-            local roster = GetRosterCache()
-            local classUpper = roster[dvTopName] and roster[dvTopName].class
-            -- CLASS_SHORT stores 3-letter abbreviations, not full uppercase class names
-            -- Try to get full class from raid roster directly
-            local nameColor = "|cFFCCCCCC"
-            for ri = 1, GetNumRaidMembers() do
-                local rname, _, _, _, _, fileName = GetRaidRosterInfo(ri)
-                if rname and rname == dvTopName and fileName then
-                    local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[string.upper(fileName)]
-                    if cc then
-                        nameColor = string.format("|cFF%02X%02X%02X",
-                            math.floor((cc.r or 1)*255),
-                            math.floor((cc.g or 1)*255),
-                            math.floor((cc.b or 1)*255))
+        local topText = ""
+        if cs and cs.isDKP then
+            -- DKP: find highest bidder from cs.votes
+            local topName, topBid = nil, 0
+            if cs.votes then
+                for name, vd in pairs(cs.votes) do
+                    if (vd.dkp or 0) > topBid then
+                        topBid = vd.dkp or 0
+                        topName = name
                     end
-                    break
                 end
             end
-            local rollStr = dvTopRoll > 0 and " Rolled "..dvTopRoll or ""
-            councilFrame.dvTopFS:SetText(
-                nameColor..dvTopName.."|r"
-                .."|cFF88CCFF DV("..dvTopBtnName..")"..rollStr.."|r")
+            if topName and topBid > 0 then
+                local nameColor = "|cFFCCCCCC"
+                for ri = 1, GetNumRaidMembers() do
+                    local rname, _, _, _, _, fileName = GetRaidRosterInfo(ri)
+                    if rname and rname == topName and fileName then
+                        local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[string.upper(fileName)]
+                        if cc then
+                            nameColor = string.format("|cFF%02X%02X%02X",
+                                math.floor((cc.r or 1)*255),
+                                math.floor((cc.g or 1)*255),
+                                math.floor((cc.b or 1)*255))
+                        end
+                        break
+                    end
+                end
+                topText = nameColor..topName.."|r|cFF88CCFF Bid: "..topBid.."|r"
+            end
         else
-            councilFrame.dvTopFS:SetText("")
+            -- LC: top DV voter
+            local dvTopName, dvTopBtnName, dvTopRoll = nil, nil, -1
+            if cs and cs.dVotes then
+                for name, dv in pairs(cs.dVotes) do
+                    if (dv.roll or 0) > dvTopRoll then
+                        dvTopRoll    = dv.roll or 0
+                        dvTopName    = name
+                        dvTopBtnName = dv.btnName or ""
+                    end
+                end
+            end
+            if dvTopName then
+                local nameColor = "|cFFCCCCCC"
+                for ri = 1, GetNumRaidMembers() do
+                    local rname, _, _, _, _, fileName = GetRaidRosterInfo(ri)
+                    if rname and rname == dvTopName and fileName then
+                        local cc = RAID_CLASS_COLORS and RAID_CLASS_COLORS[string.upper(fileName)]
+                        if cc then
+                            nameColor = string.format("|cFF%02X%02X%02X",
+                                math.floor((cc.r or 1)*255),
+                                math.floor((cc.g or 1)*255),
+                                math.floor((cc.b or 1)*255))
+                        end
+                        break
+                    end
+                end
+                local rollStr = dvTopRoll > 0 and " Rolled "..dvTopRoll or ""
+                topText = nameColor..dvTopName.."|r"
+                        .."|cFF88CCFF DV("..dvTopBtnName..")"..rollStr.."|r"
+            end
         end
+        councilFrame.dvTopFS:SetText(topText)
     end
 end
 
@@ -1496,10 +1561,11 @@ end
 -- ============================================================
 SimulateLoot = function()
     local prof = GetActiveLRProfile()
-    if not prof or prof.mode ~= "lootcouncil" then
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[ART-LC]|r Set profile mode to Loot Council first.")
+    if not prof or (prof.mode ~= "lootcouncil" and prof.mode ~= "dkp") then
+        DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[ART-LC]|r Set profile mode to Loot Council or DKP first.")
         return
     end
+    local isDKP = (prof.mode == "dkp")
     -- Close any existing sessions
     CloseVotePopup()
     if councilFrame then councilFrame:Hide() end
@@ -1528,13 +1594,16 @@ SimulateLoot = function()
             buttons      = buttons,
             isML         = true,
             isOfficer    = true,
+            isDKP        = isDKP,
             timerEnd     = now + timerSec,
             closed       = false,
             isSim        = true,
         }
         AddSession(s)
         local openMsg = "LC_OPEN^"..sid.."^0^"..item.itemLink.."^"..tostring(item.quality)
-                        .."^"..iconPath.."^"..EncodeOfficers(prof.officers)..EncodeLCButtons(buttons)
+                        .."^"..iconPath.."^"..EncodeOfficers(prof.officers)
+                        .."^"..(isDKP and "1" or "0")
+                        .."^"..tostring(timerSec)..EncodeLCButtons(buttons)
         SendLC(openMsg)
         DEFAULT_CHAT_FRAME:AddMessage("|cFF00CCFF[ART-LC]|r [Sim] "..item.itemLink)
     end
@@ -1544,7 +1613,11 @@ SimulateLoot = function()
         if sess then OpenVotePopup(sess) end
     end
     councilIdx = 1
-    OpenCouncilFrame()
+    if not isDKP then
+        OpenCouncilFrame()
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF88CCFF[ART-LC]|r [Sim] DKP: council frame opens after timer expires.")
+    end
 end
 
 -- ============================================================
@@ -1571,6 +1644,22 @@ lcTimerFrame:SetScript("OnUpdate",function()
             end
         end
     end
+    -- DKP: auto-open council frame for officers/ML when bidding timer expires
+    for i = 1, getn(sessionOrder) do
+        local _s = allSessions[sessionOrder[i]]
+        if _s and _s.isDKP and not _s.closed and not _s.councilOpened and now >= _s.timerEnd then
+            _s.councilOpened = true
+            if _s.isOfficer or _s.isML then
+                if not councilFrame or not councilFrame:IsShown() then
+                    councilIdx = i
+                    OpenCouncilFrame()
+                else
+                    UpdateCouncilNav(); RefreshCouncilRows()
+                end
+            end
+        end
+    end
+
     -- Council frame timer (follows GetCouncilSession() = displayed item)
     if councilFrame and councilFrame:IsShown() then
         local cs = GetCouncilSession()
@@ -1665,6 +1754,8 @@ OnLCMessage = function(sender, msg)
                          or "Interface\\Icons\\INV_Misc_QuestionMark"
         -- parts[7] = officers (semicolon-separated), parts[8+] = buttons
         -- Older messages (no officers field) have buttons at parts[7] — detected by presence of "~"
+        local isDKP = false
+        local timerFromMsg = nil
         local officers = {}
         local btnStart = 7
         if parts[7] and string.find(parts[7], "~", 1, true) == nil then
@@ -1676,6 +1767,17 @@ OnLCMessage = function(sender, msg)
                 end
             end
             btnStart = 8
+            -- Check for isDKP flag at parts[8] ("0" or "1", no "~")
+            if parts[8] and parts[8] ~= "" and string.find(parts[8], "~", 1, true) == nil then
+                isDKP = (parts[8] == "1")
+                btnStart = 9
+                -- Check for timer at parts[9] (pure number, no "~")
+                if parts[9] and parts[9] ~= "" and string.find(parts[9], "~", 1, true) == nil
+                   and tonumber(parts[9]) then
+                    timerFromMsg = tonumber(parts[9])
+                    btnStart = 10
+                end
+            end
         end
         -- Fall back to local profile officers if none transmitted (backward compat)
         if getn(officers) == 0 then
@@ -1692,7 +1794,7 @@ OnLCMessage = function(sender, msg)
                 {name="Pass",      priority=6},
             }
         end
-        local timer = (prof and prof.timer) or 60
+        local timer = timerFromMsg or (prof and prof.timer) or 60
         local newS = {
             sid          = sid,
             slot         = slot,
@@ -1705,19 +1807,23 @@ OnLCMessage = function(sender, msg)
             buttons      = buttons,
             isML         = (sender == myName),
             isOfficer    = IsOfficer(myName, officers),
+            isDKP        = isDKP,
             timerEnd     = GetTime() + timer,
             closed       = false,
         }
         AddSession(newS)
         OpenVotePopup(newS)
-        if newS.isOfficer or newS.isML then
-            if not councilFrame or not councilFrame:IsShown() then
-                councilIdx = getn(sessionOrder)
-                OpenCouncilFrame()
-            else
-                UpdateCouncilNav()
+        if not isDKP then
+            if newS.isOfficer or newS.isML then
+                if not councilFrame or not councilFrame:IsShown() then
+                    councilIdx = getn(sessionOrder)
+                    OpenCouncilFrame()
+                else
+                    UpdateCouncilNav()
+                end
             end
         end
+        -- DKP: council frame opens after timer expires (lcTimerFrame OnUpdate)
 
     elseif tag == "LC_VOTE" then
         local s = allSessions[parts[2]]; if not s then return end
@@ -1725,12 +1831,13 @@ OnLCMessage = function(sender, msg)
         local comment = parts[4] or ""
         local rollVal = tonumber(parts[5]) or 0
         local spec    = parts[6] or ""
+        local dkpBid  = tonumber(parts[7]) or 0
         local btnName = ""
         if s.buttons and btnIdx and s.buttons[btnIdx] then
             btnName = s.buttons[btnIdx].name or ""
         end
         if sender then
-            s.votes[sender] = {btn=btnIdx, btnName=btnName, comment=comment, roll=rollVal, spec=spec}
+            s.votes[sender] = {btn=btnIdx, btnName=btnName, comment=comment, roll=rollVal, spec=spec, dkp=dkpBid}
         end
         if councilFrame and councilFrame:IsShown() and GetCouncilSession() == s then
             RefreshCouncilRows()
@@ -1829,7 +1936,8 @@ lcLootFrame:SetScript("OnEvent",function()
         if not IsPlayerML() then return end
         if getn(sessionOrder) > 0 then return end  -- session already active, wait for End Session
         local prof = GetActiveLRProfile()
-        if not prof or prof.mode ~= "lootcouncil" then return end
+        if not prof or (prof.mode ~= "lootcouncil" and prof.mode ~= "dkp") then return end
+        local isDKP = (prof.mode == "dkp")
         local myName = UnitName("player")
         for slot = 1, GetNumLootItems() do
             local slotTex, itemName, _, quality = GetLootSlotInfo(slot)
@@ -1852,20 +1960,26 @@ lcLootFrame:SetScript("OnEvent",function()
                             buttons      = prof.buttons or {},
                             isML         = true,
                             isOfficer    = true,
+                            isDKP        = isDKP,
                             timerEnd     = GetTime()+(prof.timer or 60),
                             closed       = false,
                         }
                         AddSession(newS)
                         local openMsg = "LC_OPEN^"..sid.."^"..slot.."^"..(itemLink or "").."^"..quality
-                                        .."^"..iconPath.."^"..EncodeOfficers(prof.officers)..EncodeLCButtons(prof.buttons or {})
+                                        .."^"..iconPath.."^"..EncodeOfficers(prof.officers)
+                                        .."^"..(isDKP and "1" or "0")
+                                        .."^"..tostring(prof.timer or 60)..EncodeLCButtons(prof.buttons or {})
                         SendLC(openMsg)
                         OpenVotePopup(newS)
-                        if not councilFrame or not councilFrame:IsShown() then
-                            councilIdx = getn(sessionOrder)
-                            OpenCouncilFrame()
-                        else
-                            UpdateCouncilNav()
+                        if not isDKP then
+                            if not councilFrame or not councilFrame:IsShown() then
+                                councilIdx = getn(sessionOrder)
+                                OpenCouncilFrame()
+                            else
+                                UpdateCouncilNav()
+                            end
                         end
+                        -- DKP: council frame opens after timer expires (lcTimerFrame OnUpdate)
                     end
                 end
             end
@@ -1914,10 +2028,15 @@ lcRollFrame:SetScript("OnEvent",function()
         local vs = allSessions[pr.sid]
         if vs and not vs.closed then
             pendingRoll = nil
-            local voteMsg = "LC_VOTE^"..pr.sid.."^"..pr.btnIdx.."^"..pr.comment.."^"..tostring(val).."^"..mySpec
+            local dkpBid = 0
+            local prPopup = popupWindows[pr.sid]
+            if prPopup and vs.isDKP and prPopup.dkpBidEB then
+                dkpBid = tonumber(prPopup.dkpBidEB:GetText()) or 0
+            end
+            local voteMsg = "LC_VOTE^"..pr.sid.."^"..pr.btnIdx.."^"..pr.comment.."^"..tostring(val).."^"..mySpec.."^"..tostring(dkpBid)
             SendLC(voteMsg)
             if myName then
-                vs.votes[myName] = {btn=pr.btnIdx, btnName=pr.btnName, comment=pr.comment, roll=val, spec=mySpec}
+                vs.votes[myName] = {btn=pr.btnIdx, btnName=pr.btnName, comment=pr.comment, roll=val, spec=mySpec, dkp=dkpBid}
             end
             local pf = popupWindows[pr.sid]
             if pf then pf:Hide() end
@@ -2050,34 +2169,57 @@ local function CreateLRLeftPanel(panel)
         SetProfScroll(profScrollOffset)
     end
 
-    -- Create / Delete
-    local newEB = MakeEB(panel, LEFT_W-56, 20)
-    newEB:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,140)
-    newEB:SetText("New Profile")
+    -- ── Profile action buttons (Buff Checks layout) ──────────────
+    -- y=112: Zone Bindings
+    -- y=86:  New | Delete
+    -- y=60:  Export | Import
+    -- y=34:  Rename
+    -- y=8:   Simulate Loot
 
-    local newBtn = MakeBtn(panel,"Create",48,20)
-    newBtn:SetPoint("LEFT",newEB,"RIGHT",4,0)
+    local HALF_BTN = floor((LEFT_W - 6) / 2)
+
+    -- New button + floating editbox
+    local newBtn = MakeBtn(panel,"New",HALF_BTN,22)
+    newBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,86)
     newBtn.label:SetTextColor(0.5,1,0.5,1)
-    newBtn:SetScript("OnClick",function()
-        local db = GetLRDB()
-        local n = newEB:GetText()
-        if not n or n=="" then return end
+
+    local newProfEdit = CreateFrame("EditBox",nil,UIParent)
+    newProfEdit:SetWidth(LEFT_W-2); newProfEdit:SetHeight(22)
+    newProfEdit:SetFrameStrata("FULLSCREEN_DIALOG")
+    newProfEdit:SetPoint("BOTTOM",newBtn,"TOP",HALF_BTN/2+3,4)
+    newProfEdit:SetAutoFocus(false); newProfEdit:SetMaxLetters(40)
+    newProfEdit:SetFontObject(GameFontHighlightSmall)
+    newProfEdit:SetTextInsets(4,4,0,0)
+    newProfEdit:SetBackdrop(INPUT_BD)
+    newProfEdit:SetBackdropColor(0.05,0.05,0.08,0.97)
+    newProfEdit:SetBackdropBorderColor(0.35,0.35,0.4,1)
+    newProfEdit:SetScript("OnEscapePressed",function() this:ClearFocus(); this:Hide() end)
+    newProfEdit:SetScript("OnEnterPressed",function()
+        local n = this:GetText()
         local _, _, trimmed = strfind(n,"^%s*(.-)%s*$")
         n = trimmed or n
-        if n=="" or db.lootProfiles[n] then return end
+        if n == "" then this:ClearFocus(); this:Hide(); return end
+        local db = GetLRDB()
+        if db.lootProfiles[n] then this:ClearFocus(); this:Hide(); return end
         db.lootProfiles[n] = {
             mode="none", triggerMinQuality=4, triggerItemIds={},
             buttons={{name="Main Spec",priority=1},{name="Off Spec",priority=2},{name="Pass",priority=6}},
             timer=60, officers={}, autoLoot={enabled=false,maxQuality=2},
         }
         db.activeLRProfile = n
-        newEB:SetText("")
+        this:ClearFocus(); this:Hide()
         RefreshProfList()
         if RebuildRightPanel then RebuildRightPanel() end
     end)
+    newProfEdit:Hide()
+    newBtn:SetScript("OnClick",function()
+        newProfEdit:SetText("")
+        newProfEdit:Show(); newProfEdit:SetFocus()
+    end)
 
-    local delBtn = MakeBtn(panel,"Delete Active",LEFT_W-2,20)
-    delBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,116)
+    -- Delete button
+    local delBtn = MakeBtn(panel,"Delete",HALF_BTN,22)
+    delBtn:SetPoint("LEFT",newBtn,"RIGHT",6,0)
     delBtn.label:SetTextColor(1,0.4,0.4,1)
     delBtn:SetScript("OnClick",function()
         local db = GetLRDB()
@@ -2092,9 +2234,60 @@ local function CreateLRLeftPanel(panel)
         if RebuildRightPanel then RebuildRightPanel() end
     end)
 
+    -- Rename button + floating editbox
+    local renameBtn = MakeBtn(panel,"Rename",LEFT_W-2,22)
+    renameBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,34)
+
+    local renameProfEdit = CreateFrame("EditBox",nil,UIParent)
+    renameProfEdit:SetWidth(LEFT_W-2); renameProfEdit:SetHeight(22)
+    renameProfEdit:SetFrameStrata("FULLSCREEN_DIALOG")
+    renameProfEdit:SetPoint("BOTTOM",renameBtn,"TOP",0,4)
+    renameProfEdit:SetAutoFocus(false); renameProfEdit:SetMaxLetters(40)
+    renameProfEdit:SetFontObject(GameFontHighlightSmall)
+    renameProfEdit:SetTextInsets(4,4,0,0)
+    renameProfEdit:SetBackdrop(INPUT_BD)
+    renameProfEdit:SetBackdropColor(0.05,0.05,0.08,0.97)
+    renameProfEdit:SetBackdropBorderColor(0.35,0.35,0.4,1)
+    renameProfEdit:SetScript("OnEscapePressed",function() this:ClearFocus(); this:Hide() end)
+    renameProfEdit:SetScript("OnEnterPressed",function()
+        local newName = this:GetText()
+        local _, _, trimmed = strfind(newName,"^%s*(.-)%s*$")
+        newName = trimmed or newName
+        local db = GetLRDB()
+        local oldName = db.activeLRProfile
+        if newName == "" or newName == oldName then this:ClearFocus(); this:Hide(); return end
+        if db.lootProfiles[newName] then this:ClearFocus(); this:Hide(); return end
+        db.lootProfiles[newName] = db.lootProfiles[oldName]
+        db.lootProfiles[oldName] = nil
+        for k,v in pairs(db.lrZoneBindings) do
+            if v == oldName then db.lrZoneBindings[k] = newName end
+        end
+        db.activeLRProfile = newName
+        this:ClearFocus(); this:Hide()
+        RefreshProfList()
+        if RebuildRightPanel then RebuildRightPanel() end
+    end)
+    renameProfEdit:Hide()
+    renameBtn:SetScript("OnClick",function()
+        renameProfEdit:SetText(GetLRDB().activeLRProfile or "")
+        renameProfEdit:Show(); renameProfEdit:SetFocus(); renameProfEdit:HighlightText()
+    end)
+
+    -- Simulate Loot
+    local simBtn = MakeBtn(panel,"Simulate Loot",LEFT_W-2,22)
+    simBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,8)
+    simBtn.label:SetTextColor(0.6,0.8,1,1)
+    simBtn:SetScript("OnClick",function() SimulateLoot() end)
+
+    -- Export / Import
+    local expBtn = MakeBtn(panel,"Export",HALF_BTN,22)
+    expBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,60)
+    local impBtn = MakeBtn(panel,"Import",HALF_BTN,22)
+    impBtn:SetPoint("LEFT",expBtn,"RIGHT",6,0)
+
     -- Zone Bindings button + modal
     local zoneBtn = MakeBtn(panel,"Zone Bindings",LEFT_W-2,22)
-    zoneBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,88)
+    zoneBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,112)
     zoneBtn.label:SetTextColor(0.7,1,0.7,1)
 
     local zm = CreateFrame("Frame",nil,UIParent)
@@ -2170,22 +2363,6 @@ local function CreateLRLeftPanel(panel)
     end
     zoneBtn:SetScript("OnClick",function() RefreshZoneModal(); zm:Show() end)
 
-    -- Simulate Loot button — starts a test LC session with 2 preset items
-    local simBtn = MakeBtn(panel,"Simulate Loot",LEFT_W-2,22)
-    simBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,60)
-    simBtn.label:SetTextColor(0.6,0.8,1,1)
-    simBtn:SetScript("OnClick",function()
-        SimulateLoot()
-    end)
-
-    -- Export / Import buttons
-    local HALF_W = floor((LEFT_W - 2) / 2) - 1
-    local expBtn = MakeBtn(panel,"Export",HALF_W,20)
-    expBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,34)
-
-    local impBtn = MakeBtn(panel,"Import",HALF_W,20)
-    impBtn:SetPoint("LEFT",expBtn,"RIGHT",4,0)
-
     -- ── Share modal (Export / Import) ───────────────────────────
     local shareModal = CreateFrame("Frame",nil,UIParent)
     shareModal:SetAllPoints(UIParent)
@@ -2246,6 +2423,23 @@ local function CreateLRLeftPanel(panel)
 
     expBtn:SetScript("OnClick",function()
         local prof = GetActiveLRProfile()
+        -- Flush current editbox values to profile before serialising
+        -- (handles the case where the user hasn't defocused the Roll Max / DV fields yet)
+        local lcFRef = lrRightFrame and lrRightFrame.lcF
+        if lcFRef and prof and prof.buttons then
+            for bi = 1, 6 do
+                local bd = prof.buttons[bi]
+                if bd then
+                    if lcFRef.btnRollEBs and lcFRef.btnRollEBs[bi] then
+                        local v = tonumber(lcFRef.btnRollEBs[bi]:GetText())
+                        bd.rollMax = (v and v > 0) and floor(v) or 0
+                    end
+                    if lcFRef.btnDVCBs and lcFRef.btnDVCBs[bi] then
+                        bd.isDoubleVote = lcFRef.btnDVCBs[bi]:GetChecked() and true or false
+                    end
+                end
+            end
+        end
         smTitle:SetText("Export Profile")
         smDesc:SetText("Text is pre-selected — press Ctrl+C to copy:")
         smStatus:SetText("")
@@ -2317,7 +2511,7 @@ local function CreateLRRightPanel(panel)
     modeLbl:SetText("Mode:"); modeLbl:SetTextColor(0.65,0.65,0.7,1)
 
     local MODE_IDS  = {"none","lootcouncil","dkp"}
-    local MODE_LBLS = {"None","Loot Council","DKP (soon)"}
+    local MODE_LBLS = {"None","Loot Council","DKP"}
     local modeBtns  = {}
     for mi = 1, 3 do
         local mb = MakeBtn(rf, MODE_LBLS[mi], 100, 22)
@@ -2400,7 +2594,7 @@ local function CreateLRRightPanel(panel)
     local lcF = CreateFrame("Frame",nil,settingsChild)
     lcF:SetPoint("TOPLEFT",settingsChild,"TOPLEFT",0,0)
     lcF:SetWidth(560)
-    lcF:SetHeight(565)
+    lcF:SetHeight(568)   -- grows dynamically via offEB OnTextChanged
     rf.lcF = lcF
 
     -- We need the right panel width for some elements
@@ -2559,58 +2753,11 @@ local function CreateLRRightPanel(panel)
 
     MakeDivider(lcF,lcF,-314)
 
-    -- Officers
-    SectionHdr(lcF,"Council / Officers",lcF,-322)
-    local offLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    offLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-340)
-    offLbl:SetText("One name per line:"); offLbl:SetTextColor(0.65,0.65,0.7,1)
-
-    local offSF = CreateFrame("ScrollFrame",nil,lcF)
-    offSF:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-358)
-    offSF:SetWidth(300); offSF:SetHeight(90)
-
-    local offEB = CreateFrame("EditBox",nil,offSF)
-    offEB:SetWidth(300); offEB:SetHeight(400)
-    offEB:SetMultiLine(true)
-    offEB:SetFontObject("GameFontHighlightSmall")
-    offEB:SetTextInsets(4,4,2,2)
-    offEB:SetAutoFocus(false)
-    offEB:SetScript("OnEscapePressed",function() this:ClearFocus() end)
-    offSF:SetScrollChild(offEB)
-    offSF:EnableMouseWheel(true)
-    offSF:SetScript("OnMouseWheel",function()
-        local step = 20
-        local cur  = offSF:GetVerticalScroll()
-        local maxS = math.max(0, offEB:GetHeight() - offSF:GetHeight())
-        if arg1 > 0 then
-            offSF:SetVerticalScroll(math.max(0,    cur - step))
-        else
-            offSF:SetVerticalScroll(math.min(maxS, cur + step))
-        end
-    end)
-
-    local offSaveBtn = MakeBtn(lcF,"Save Officers",110,20)
-    offSaveBtn:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-456)
-    offSaveBtn:SetScript("OnClick",function()
-        local p = GetActiveLRProfile()
-        if not p then return end
-        local txt = offEB:GetText()
-        p.officers = {}; local oc = 0
-        for line in string.gfind(txt.."\n","([^\n]*)\n") do
-            local _, _, trimmed = strfind(line,"^%s*(.-)%s*$")
-            local n = trimmed or line
-            if n ~= "" then oc=oc+1; p.officers[oc]=n end
-        end
-        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[ART-LC]|r Saved "..oc.." officers.")
-    end)
-
-    MakeDivider(lcF,lcF,-484)
-
-    -- Officer Frame Display  (y: -492 … -618)
-    SectionHdr(lcF,"Officer Frame",lcF,-492)
+    -- Officer Frame Display
+    SectionHdr(lcF,"Officer Frame",lcF,-322)
 
     local ofLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    ofLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-510)
+    ofLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-340)
     ofLbl:SetText("Show columns:"); ofLbl:SetTextColor(0.65,0.65,0.7,1)
 
     local colDefs = {
@@ -2624,7 +2771,7 @@ local function CreateLRRightPanel(panel)
         local cd = colDefs[ci]
         local cb = CreateFrame("CheckButton",nil,lcF,"UICheckButtonTemplate")
         cb:SetWidth(20); cb:SetHeight(20)
-        cb:SetPoint("TOPLEFT",lcF,"TOPLEFT",(ci-1)*80,-526)
+        cb:SetPoint("TOPLEFT",lcF,"TOPLEFT",(ci-1)*80,-356)
         cb.colKey = cd.key
         cb:SetScript("OnClick",function()
             local p = GetActiveLRProfile()
@@ -2638,9 +2785,9 @@ local function CreateLRRightPanel(panel)
         colCBs[ci] = cb
     end
 
-    -- Sort order  (y=-552 label, y=-570 buttons) — spec auto-read from PlayerInfo, no text field needed
+    -- Sort order
     local sortLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    sortLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-552)
+    sortLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-382)
     sortLbl:SetText("Sort order:"); sortLbl:SetTextColor(0.65,0.65,0.7,1)
 
     local function MakeCycleBtn(xOff, yOff, getVal, setVal)
@@ -2663,25 +2810,25 @@ local function CreateLRRightPanel(panel)
     end
 
     local primLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    primLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-570)
+    primLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-400)
     primLbl:SetText("1st:"); primLbl:SetTextColor(0.65,0.65,0.7,1)
-    local primBtn = MakeCycleBtn(24,-570,
+    local primBtn = MakeCycleBtn(24,-400,
         function(p) return p.councilSort.primary end,
         function(p,v) p.councilSort.primary = v end)
     primBtn.label:SetText("Priority")
 
     local secLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    secLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",116,-570)
+    secLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",116,-400)
     secLbl:SetText("2nd:"); secLbl:SetTextColor(0.65,0.65,0.7,1)
-    local secBtn = MakeCycleBtn(140,-570,
+    local secBtn = MakeCycleBtn(140,-400,
         function(p) return p.councilSort.secondary end,
         function(p,v) p.councilSort.secondary = v end)
     secBtn.label:SetText("Roll")
 
     local tercLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    tercLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",232,-570)
+    tercLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",232,-400)
     tercLbl:SetText("3rd:"); tercLbl:SetTextColor(0.65,0.65,0.7,1)
-    local tercBtn = MakeCycleBtn(256,-570,
+    local tercBtn = MakeCycleBtn(256,-400,
         function(p) return p.councilSort.tertiary or "name" end,
         function(p,v) p.councilSort.tertiary = v end)
     tercBtn.label:SetText("Name")
@@ -2692,12 +2839,12 @@ local function CreateLRRightPanel(panel)
     lcF.secBtn  = secBtn
     lcF.tercBtn = tercBtn
 
-    MakeDivider(lcF,lcF,-594)
+    MakeDivider(lcF,lcF,-424)
 
-    -- Auto-loot  (y: -626 … -672)
-    SectionHdr(lcF,"Auto-Loot (non-council items)",lcF,-626)
+    -- Auto-Loot
+    SectionHdr(lcF,"Auto-Loot (non-council items)",lcF,-432)
     local alCB = ART_CreateCheckbox(lcF,"Auto-loot items below quality threshold")
-    alCB:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-644)
+    alCB:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-450)
     alCB.userOnClick = function()
         local p = GetActiveLRProfile()
         if p then
@@ -2707,7 +2854,7 @@ local function CreateLRRightPanel(panel)
     end
 
     local alQLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-    alQLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-668)
+    alQLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-474)
     alQLbl:SetText("Max Quality to auto-loot:"); alQLbl:SetTextColor(0.65,0.65,0.7,1)
     -- Cycle button — same pattern as Trigger quality button
     local alQBtn = MakeBtn(lcF,"",110,20)
@@ -2725,14 +2872,70 @@ local function CreateLRRightPanel(panel)
     end)
     alQBtn.label:SetText(QUALITY_COLORS[3]..QUALITY_NAMES[3].."|r")
 
+    MakeDivider(lcF,lcF,-498)
+
+    -- Council / Officers — free-growing EditBox at bottom; settingsSF handles scrolling
+    SectionHdr(lcF,"Council / Officers",lcF,-506)
+    local offLbl = lcF:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+    offLbl:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-524)
+    offLbl:SetText("One name per line:"); offLbl:SetTextColor(0.65,0.65,0.7,1)
+
+    local offSaveBtn = MakeBtn(lcF,"Save Officers",110,20)
+    offSaveBtn:SetPoint("TOPLEFT",lcF,"TOPLEFT",188,-524)
+
+    -- LC_OFF_BASE_H: lcF height when offEB has minimal (1-line) content
+    local LC_OFF_BASE_H = 548
+    local offEB = CreateFrame("EditBox",nil,lcF)
+    offEB:SetPoint("TOPLEFT",lcF,"TOPLEFT",0,-544)
+    offEB:SetWidth(300)
+    offEB:SetHeight(20)
+    offEB:SetMultiLine(true)
+    offEB:SetMaxLetters(0)
+    offEB:SetFontObject("GameFontHighlightSmall")
+    offEB:SetTextInsets(4,4,2,2)
+    offEB:SetAutoFocus(false)
+    offEB:SetBackdrop(INPUT_BD)
+    offEB:SetBackdropColor(0.04,0.04,0.06,0.9)
+    offEB:SetBackdropBorderColor(0.3,0.3,0.35,1)
+    offEB:SetScript("OnEscapePressed",function() this:ClearFocus() end)
+    offEB:SetScript("OnTextChanged",function()
+        local text = offEB:GetText()
+        local lines = 1
+        for _ in string.gfind(text,"\n") do lines = lines+1 end
+        local h = math.max(20, lines*14+4)
+        offEB:SetHeight(h)
+        local totalH = LC_OFF_BASE_H + h
+        lcF:SetHeight(totalH)
+        settingsChild:SetHeight(totalH)
+        local sfH = settingsSF:GetHeight()
+        if sfH and sfH > 0 then
+            local maxS = math.max(0, totalH - sfH)
+            settingsSlider:SetMinMaxValues(0, maxS)
+        end
+    end)
+
+    offSaveBtn:SetScript("OnClick",function()
+        local p = GetActiveLRProfile()
+        if not p then return end
+        local txt = offEB:GetText()
+        p.officers = {}; local oc = 0
+        for line in string.gfind(txt.."\n","([^\n]*)\n") do
+            local _, _, trimmed = strfind(line,"^%s*(.-)%s*$")
+            local n = trimmed or line
+            if n ~= "" then oc=oc+1; p.officers[oc]=n end
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[ART-LC]|r Saved "..oc.." officers.")
+    end)
+
     -- Store refs for LoadLCProfile
-    lcF.trigQualCB = trigQualCB
-    lcF.trigQBtn   = trigQBtn
-    lcF.trigIEB    = trigIEB
-    lcF.btnNameEBs = btnNameEBs
-    lcF.btnPrioEBs = btnPrioEBs
-    lcF.btnRollEBs = btnRollEBs
-    lcF.btnDVCBs   = btnDVCBs
+    lcF.trigQualCB  = trigQualCB
+    lcF.trigQBtn    = trigQBtn
+    lcF.trigIEB     = trigIEB
+    lcF.colRollLbl  = colRollLbl
+    lcF.btnNameEBs  = btnNameEBs
+    lcF.btnPrioEBs  = btnPrioEBs
+    lcF.btnRollEBs  = btnRollEBs
+    lcF.btnDVCBs    = btnDVCBs
     lcF.timerEB   = timerEB
     lcF.offEB     = offEB
     lcF.alCB      = alCB
@@ -2762,12 +2965,21 @@ local function CreateLRRightPanel(panel)
         end
         lcF.trigIEB:SetText(idStr)
 
+        local isDKPMode = (prof.mode == "dkp")
+        if lcF.colRollLbl then
+            if isDKPMode then lcF.colRollLbl:Hide() else lcF.colRollLbl:Show() end
+        end
         for bi = 1, 6 do
             local bd = prof.buttons[bi] or {name="",priority=bi}
+            -- Migrate old "dv" field to "isDoubleVote" (one-time fix for old SavedVariables)
+            if bd.dv ~= nil and bd.isDoubleVote == nil then
+                bd.isDoubleVote = bd.dv
+            end
             lcF.btnNameEBs[bi]:SetText(bd.name or "")
             lcF.btnPrioEBs[bi]:SetText(tostring(bd.priority or bi))
             lcF.btnRollEBs[bi]:SetText((bd.rollMax and bd.rollMax > 0) and tostring(bd.rollMax) or "")
-            lcF.btnDVCBs[bi]:SetChecked(bd.isDoubleVote and true or false)
+            if isDKPMode then lcF.btnRollEBs[bi]:Hide() else lcF.btnRollEBs[bi]:Show() end
+            lcF.btnDVCBs[bi]:SetChecked((bd.isDoubleVote or bd.dv) and 1 or nil)
         end
 
         lcF.timerEB:SetText(tostring(prof.timer or 60))
@@ -2827,12 +3039,10 @@ local function CreateLRRightPanel(panel)
         local contentH = 40
         if prof.mode == "none" then
             noneF:Show()
-        elseif prof.mode == "dkp" then
-            dkpF:Show()
-        elseif prof.mode == "lootcouncil" then
+        elseif prof.mode == "dkp" or prof.mode == "lootcouncil" then
             lcF:Show()
-            lcF.LoadLCProfile(prof)
-            contentH = 700
+            lcF.LoadLCProfile(prof)  -- triggers offEB OnTextChanged → lcF height updated
+            contentH = lcF:GetHeight()
         end
 
         -- Update scroll child height and slider range

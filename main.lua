@@ -298,12 +298,39 @@ local function CreateMinimapButton()
 	icon:SetHeight(20)
 	icon:SetPoint("TOPLEFT", mb, "TOPLEFT", 6, -5)
 
+	mb._dragging = false
+
+	mb:SetScript("OnMouseDown", function()
+		if arg1 == "LeftButton" and IsShiftKeyDown() then
+			this._dragging = true
+		end
+	end)
+	mb:SetScript("OnMouseUp", function()
+		if arg1 == "LeftButton" then
+			this._dragging = false
+		end
+	end)
+	mb:SetScript("OnUpdate", function()
+		if not this._dragging then return end
+		local scale = UIParent:GetEffectiveScale()
+		local mx, my = GetCursorPosition()
+		mx = mx / scale
+		my = my / scale
+		local mmx, mmy = Minimap:GetCenter()
+		local dx = mx - mmx
+		local dy = my - mmy
+		local angle = math.atan2(dy, dx) * 180 / 3.14159265358979
+		DB.minimapAngle = angle
+		UpdateMinimapButtonPosition()
+	end)
 	mb:SetScript("OnClick", function()
-		if arg1 == "LeftButton" then MainFrame_Toggle() end
+		if arg1 == "LeftButton" and not IsShiftKeyDown() then
+			MainFrame_Toggle()
+		end
 	end)
 	mb:SetScript("OnEnter", function()
 		GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-		GameTooltip:SetText("amptieRaidTools\nLeft-click: Open/Close")
+		GameTooltip:SetText("amptieRaidTools\nLeft-click: Open/Close\nShift+drag: Move")
 		GameTooltip:Show()
 	end)
 	mb:SetScript("OnLeave", function() GameTooltip:Hide() end)

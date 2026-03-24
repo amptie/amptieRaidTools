@@ -617,7 +617,9 @@ local function PlayerHasBuff(buffName)
         local tex, _, spellId = UnitBuff("player", i)
         if not tex then break end
         -- Primary: SpellInfo (SuperWoW, always synchronous)
-        if spellId and spellId > 0 then
+        -- Guard with SpellInfo ~= nil: older TurtleWoW clients return spellId from
+        -- UnitBuff but may not yet expose SpellInfo, so fall through to tooltip scan.
+        if spellId and spellId > 0 and SpellInfo then
             local sname = SpellInfo(spellId)
             if sname and sname == buffName then return true end
         end
@@ -787,38 +789,34 @@ local function BCDecodeRule(data)
     return { who={ type=whoType, value=whoValue }, conditions=conditions }
 end
 
--- ── Debounce state for auto-resend ────────────────────────────
-local bcAurasPending  = false
-local bcAurasTimer    = 0
-local bcRosterPending = false
-local bcRosterTimer   = 0
-local BC_AURAS_DELAY  = 0.5   -- seconds after last aura change before re-sending
-local BC_ROSTER_DELAY = 3.0   -- seconds after roster change before re-broadcasting
+-- ── 5-second poll replaces reactive debounce ──────────────────
+-- Dirty flags are set on aura/roster events; the single poll timer acts on
+-- them at most once per 5 s, collapsing burst events (flask drinks, zone-ins,
+-- sub-group reassignments) into one network send instead of many.
+local bcAurasDirty     = false
+local bcRosterDirty    = false
+local BC_POLL_INTERVAL = 5.0
+local bcPollTimer      = 0
 
 local bcDebounceFrame = CreateFrame("Frame", nil, UIParent)
 bcDebounceFrame:SetScript("OnUpdate", function()
     local dt = arg1
-    if bcAurasPending then
-        bcAurasTimer = bcAurasTimer + dt
-        if bcAurasTimer >= BC_AURAS_DELAY then
-            bcAurasPending = false
-            bcAurasTimer   = 0
-            -- Re-evaluate own buffs with stored rules and re-send result
-            if bcRcvCheckId and getn(bcRcvRules) > 0 then
-                BCEvaluateSelfAndRespond(bcRcvCheckId, bcRcvRules)
-            end
+    bcPollTimer = bcPollTimer + dt
+    if bcPollTimer < BC_POLL_INTERVAL then return end
+    bcPollTimer = 0
+    if bcAurasDirty then
+        bcAurasDirty = false
+        -- Re-evaluate own buffs with stored rules and re-send result
+        if bcRcvCheckId and getn(bcRcvRules) > 0 then
+            BCEvaluateSelfAndRespond(bcRcvCheckId, bcRcvRules)
         end
     end
-    if bcRosterPending then
-        bcRosterTimer = bcRosterTimer + dt
-        if bcRosterTimer >= BC_ROSTER_DELAY then
-            bcRosterPending = false
-            bcRosterTimer   = 0
-            -- Re-broadcast rules if overlay is active
-            local db2 = amptieRaidToolsDB
-            if db2 and db2.bcOverlayShown and db2.activeBCProfile then
-                ART_BC_StartCheck(db2.activeBCProfile)
-            end
+    if bcRosterDirty then
+        bcRosterDirty = false
+        -- Re-broadcast check definition so new members receive the rules
+        local db2 = amptieRaidToolsDB
+        if db2 and db2.bcOverlayShown and db2.activeBCProfile then
+            ART_BC_StartCheck(db2.activeBCProfile)
         end
     end
 end)
@@ -832,8 +830,7 @@ bcEvt:SetScript("OnEvent", function()
     local a1, a2, a3, a4 = arg1, arg2, arg3, arg4
 
     if evt == "PLAYER_AURAS_CHANGED" then
-        bcAurasPending = true
-        bcAurasTimer   = 0
+        bcAurasDirty = true   -- handled by 5s poll timer
         return
     end
 
@@ -2178,8 +2175,7 @@ function AmptieRaidTools_InitBuffChecks(body)
             -- Re-broadcast rules with debounce so new members receive them
             local db2 = amptieRaidToolsDB
             if db2 and db2.bcOverlayShown then
-                bcRosterPending = true
-                bcRosterTimer   = 0
+                bcRosterDirty = true   -- handled by 5s poll timer
             end
         end
     end)
