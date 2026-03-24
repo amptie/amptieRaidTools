@@ -197,25 +197,27 @@ end
 -- Gossip auto-select
 -- ============================================================
 local function QoL_HandleGossip()
-    -- QUESTREPEAT: find the remembered quest in gossip buttons and click it
-    if QDB("QUESTREPEAT") and IsControlKeyDown() and qrData.quest then
-        for i = 1, NUMGOSSIPBUTTONS do
-            local btn = getglobal("GossipTitleButton" .. i)
-            if btn and btn:IsVisible() and btn:GetText() == qrData.quest then
-                btn:Click()
-                return
+    -- QUESTREPEAT gossip (1:1 from QuestRepeat addon)
+    if QDB("QUESTREPEAT") then
+        if IsControlKeyDown() and qrData.quest then
+            local titleButton
+            for i = 1, NUMGOSSIPBUTTONS do
+                titleButton = getglobal("GossipTitleButton" .. i)
+                if titleButton:IsVisible() and titleButton:GetText() == qrData.quest then
+                    titleButton:Click()
+                    return
+                end
             end
+            -- quest not found in gossip — no reset, same as QuestRepeat
+        else
+            qrData.quest = nil
+            qrData.item  = nil
         end
-        -- Quest not found in gossip → reset so we don't loop forever
-        qrData.quest = nil
-        qrData.item  = nil
-        return
     end
 
     -- GOSSIP auto-select: single non-interactive option
     if not QDB("GOSSIP") then return end
     local opts = { GetGossipOptions() }
-    -- GetGossipOptions returns alternating text, type pairs
     local numOptions = getn(opts) / 2
     if numOptions == 1 then
         local gossipType = opts[2]
@@ -335,87 +337,81 @@ UseContainerItem = function(bag, slot)
 end
 
 -- ============================================================
--- Quest Repeat hooks  (mirrors QuestRepeat addon logic exactly)
--- PostHook pattern: original always runs first so UI elements
--- are fully initialised before we interact with them.
+-- Quest Repeat hooks  (1:1 port of QuestRepeat addon by Kyahx)
+-- Only change: reward_chosen → qrData, QDB("QUESTREPEAT") guard added.
 -- ============================================================
-local _OrigQuestDetailOnShow   = QuestFrameDetailPanel_OnShow
-local _OrigQuestProgressOnShow = QuestFrameProgressPanel_OnShow
-local _OrigQuestRewardOnShow   = QuestFrameRewardPanel_OnShow
-local _OrigQuestGreetOnShow    = QuestFrameGreetingPanel_OnShow
-
--- Detail panel: quest offered → save name, accept if CTRL held
-QuestFrameDetailPanel_OnShow = function()
-    if _OrigQuestDetailOnShow then _OrigQuestDetailOnShow() end
-    if not QDB("QUESTREPEAT") then return end
-    if QuestTitleText then
-        qrData.quest = QuestTitleText:GetText()
+local function QR_PostHook(original, hook)
+    return function(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
+        if original then original(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10) end
+        hook(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
     end
+end
+
+local function QR_PreHook(original, hook)
+    return function(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
+        hook(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10)
+        if original then original(a1,a2,a3,a4,a5,a6,a7,a8,a9,a10) end
+    end
+end
+
+-- Reward button PreHook: save/restore item choice (runs before original GetQuestReward call)
+local function QR_QuestRewardCompleteButton_OnClick()
+    if not QDB("QUESTREPEAT") then return end
+    if IsControlKeyDown() and qrData.quest and qrData.item then
+        QuestFrameRewardPanel.itemChoice = qrData.item
+    else
+        qrData.item  = QuestFrameRewardPanel.itemChoice
+        qrData.quest = QuestRewardTitleText:GetText()
+    end
+end
+QuestRewardCompleteButton_OnClick = QR_PreHook(QuestRewardCompleteButton_OnClick, QR_QuestRewardCompleteButton_OnClick)
+
+-- Reward panel: auto-complete when choice is known or no choice needed
+local function QR_QuestFrameRewardPanel_OnShow()
+    if not QDB("QUESTREPEAT") then return end
+    if IsControlKeyDown() and ((qrData.quest and qrData.item) or QuestFrameRewardPanel.itemChoice == 0) then
+        QuestFrameCompleteQuestButton:Click()
+    end
+end
+QuestFrameRewardPanel_OnShow = QR_PostHook(QuestFrameRewardPanel_OnShow, QR_QuestFrameRewardPanel_OnShow)
+
+-- Detail panel: save quest name and accept
+local function QR_QuestFrameDetailPanel_OnShow()
+    if not QDB("QUESTREPEAT") then return end
     if IsControlKeyDown() then
+        qrData.quest = QuestTitleText:GetText()
         AcceptQuest()
     end
 end
+QuestFrameDetailPanel_OnShow = QR_PostHook(QuestFrameDetailPanel_OnShow, QR_QuestFrameDetailPanel_OnShow)
 
--- Progress panel: call CompleteQuest() directly — avoids the gold-payment
--- StaticPopup that QuestFrameCompleteButton:Click() triggers internally.
-QuestFrameProgressPanel_OnShow = function()
-    if _OrigQuestProgressOnShow then _OrigQuestProgressOnShow() end
+-- Progress panel: click complete button
+local function QR_QuestFrameProgressPanel_OnShow()
     if not QDB("QUESTREPEAT") then return end
     if IsControlKeyDown() then
-        CompleteQuest()
+        QuestFrameCompleteButton:Click()
     end
 end
+QuestFrameProgressPanel_OnShow = QR_PostHook(QuestFrameProgressPanel_OnShow, QR_QuestFrameProgressPanel_OnShow)
 
--- Reward panel: call GetQuestReward() directly — avoids relying on
--- QuestRewardCompleteButton_OnClick global which may be nil at load time.
-QuestFrameRewardPanel_OnShow = function()
-    if _OrigQuestRewardOnShow then _OrigQuestRewardOnShow() end
-    if not QDB("QUESTREPEAT") or not IsControlKeyDown() then return end
-    local noChoice = QuestFrameRewardPanel.itemChoice == 0
-    if noChoice then
-        GetQuestReward(0)
-    elseif qrData.item then
-        QuestFrameRewardPanel.itemChoice = qrData.item
-        GetQuestReward(qrData.item)
-    end
-    -- First time with item choices: player clicks manually; button script below saves it
-end
-
--- Hook reward button frame script directly (safer than global function hook).
--- Saves the player's item choice for future CTRL cycles.
-QuestFrameCompleteQuestButton:SetScript("OnClick", function()
-    if QDB("QUESTREPEAT") then
-        if IsControlKeyDown() and qrData.item then
-            QuestFrameRewardPanel.itemChoice = qrData.item
-        else
-            qrData.item = QuestFrameRewardPanel.itemChoice
-            if QuestRewardTitleText then
-                qrData.quest = QuestRewardTitleText:GetText()
-            end
-        end
-    end
-    -- Always complete the quest (mirrors what the original script does)
-    GetQuestReward(QuestFrameRewardPanel.itemChoice or 0)
-end)
-
--- Greeting panel: click the remembered quest's title button directly (same as QuestRepeat)
-QuestFrameGreetingPanel_OnShow = function()
-    if _OrigQuestGreetOnShow then _OrigQuestGreetOnShow() end
+-- Greeting panel: find and click the remembered quest's title button
+local function QR_QuestFrameGreetingPanel_OnShow()
     if not QDB("QUESTREPEAT") then return end
     if IsControlKeyDown() and qrData.quest then
+        local titleButton
         for i = 1, MAX_NUM_QUESTS do
-            local btn = getglobal("QuestTitleButton" .. i)
-            if btn and btn:IsVisible() and btn:GetText() == qrData.quest then
-                btn:Click()
-                return
+            titleButton = getglobal("QuestTitleButton" .. i)
+            if titleButton:IsVisible() and titleButton:GetText() == qrData.quest then
+                titleButton:Click()
+                break
             end
         end
     else
-        -- CTRL released: reset so next session starts fresh
         qrData.quest = nil
         qrData.item  = nil
     end
 end
+QuestFrameGreetingPanel_OnShow = QR_PostHook(QuestFrameGreetingPanel_OnShow, QR_QuestFrameGreetingPanel_OnShow)
 
 -- ============================================================
 -- Main event frame
