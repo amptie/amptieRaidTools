@@ -15,8 +15,9 @@ local tinsert = table.insert
 local pairs   = pairs
 local GetTime = GetTime
 
--- Save bars 1-6 (slots 1-72)
-local ART_BP_MAX_SLOT = 72
+-- WoW 1.12: Slots 1–72 = sechs Standardleisten zu je 12; 73–120 = Haltungs-/Form-/Bonusleisten
+-- (Krieger, Druid, Schurke, Priester usw.). Einige Clients/Addons nutzen bis 144 — mit abdecken.
+local ART_BP_MAX_SLOT = 144
 
 -- ============================================================
 -- Hidden tooltip for reading action slot names
@@ -27,6 +28,14 @@ ART_BP_Tip:SetOwner(UIParent, "ANCHOR_NONE")
 local function ART_BP_TipLine(n)
 	local f = getglobal("ART_BP_TipTextLeft" .. n)
 	return f and f:GetText()
+end
+
+local function ART_BP_TipRightLine(n)
+	local f = getglobal("ART_BP_TipTextRight" .. n)
+	if not f or not f:IsShown() then return nil end
+	local t = f:GetText()
+	if t and t ~= "" then return t end
+	return nil
 end
 
 -- ============================================================
@@ -41,25 +50,40 @@ local function ART_BP_GetSlotData(slot)
 		return {t = "macro", n = mname}
 	end
 
-	-- Use tooltip to read the display name
+	-- Wie ActionBarProfiles: erst SetAction, dann Pickup/Place, dann Tooltip auslesen
+	-- (vorheriger Code verlangte TextLeft1 vor Pickup — das faellt bei manchen Slots aus)
 	ART_BP_Tip:ClearLines()
 	ART_BP_Tip:SetAction(slot)
-	local name = ART_BP_TipLine(1)
-	if not name or name == "" then return nil end
-
-	-- Temporarily pick up to identify type, then immediately restore
 	PickupAction(slot)
 	local isSpell = CursorHasSpell()
 	PlaceAction(slot)
 
 	if isSpell then
+		local name = ART_BP_TipLine(1)
+		if not name or name == "" then
+			ART_BP_Tip:ClearLines()
+			ART_BP_Tip:SetAction(slot)
+			name = ART_BP_TipLine(1)
+		end
+		if not name or name == "" then return nil end
 		local rank = ART_BP_TipLine(2)
+		if rank and string.find(rank, "^Rank") then
+			return {t = "spell", n = name, r = rank}
+		end
+		rank = ART_BP_TipRightLine(1)
 		if rank and string.find(rank, "^Rank") then
 			return {t = "spell", n = name, r = rank}
 		end
 		return {t = "spell", n = name}
 	end
 
+	local name = ART_BP_TipLine(1)
+	if not name or name == "" then
+		ART_BP_Tip:ClearLines()
+		ART_BP_Tip:SetAction(slot)
+		name = ART_BP_TipLine(1)
+	end
+	if not name or name == "" then return nil end
 	return {t = "item", n = name}
 end
 
@@ -350,7 +374,7 @@ function AmptieRaidTools_InitBarProfiles(body)
 	descFs:SetPoint("TOPLEFT", content, "TOPLEFT", X, yPos)
 	descFs:SetWidth(580)
 	descFs:SetJustifyH("LEFT")
-	descFs:SetText("Capture and restore action bar layouts (bars 1-6, slots 1-72). Supports spells, macros (incl. SuperCleveRoidMacros), and items. Link profiles to specs for automatic switching.")
+	descFs:SetText("Capture and restore action bar layouts (slots 1–144: alle Standardleisten, Haltungs-/Form-Leisten und erweiterte IDs wie bei ActionBarProfiles). Supports spells, macros (incl. SuperCleveRoidMacros), and items. Link profiles to specs for automatic switching.")
 	yPos = yPos - 40
 
 	-- ── Profile name EditBox ─────────────────────────────────

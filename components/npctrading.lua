@@ -269,6 +269,8 @@ local CLASS_MATERIALS = {
 -- Material IDs: Crystal Vial=8925, Essence of Agony=8923, Dust of Deterioration=8924,
 --               Deathweed=5173, Maiden's Anguish=2931, Leaded Vial=3372
 local ROGUE_POISONS = {
+	-- Instant Poison VI: TurtleWoW/vanilla 3x Dust of Deterioration + 1x Crystal Vial; 5 charges per craft (classic)
+	{ id=8928,  name="Instant Poison VI",       doses=6, mats={ {id=8924,qty=4},{id=8925,qty=1} } },
 	{ id=20844, name="Deadly Poison V",         doses=6, mats={ {id=5173,qty=7},{id=8925,qty=1} } },
 	{ id=9186,  name="Mind-numbing Poison III", doses=6, mats={ {id=8924,qty=2},{id=8923,qty=2},{id=8925,qty=1} } },
 	{ id=3776,  name="Crippling Poison II",     doses=6, mats={ {id=8923,qty=3},{id=8925,qty=1} } },

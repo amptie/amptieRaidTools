@@ -108,6 +108,13 @@ end
 local qolTipFrame = CreateFrame("GameTooltip", "ART_QoL_Tip", UIParent, "GameTooltipTemplate")
 qolTipFrame:SetOwner(UIParent, "ANCHOR_NONE")
 
+-- LazyPig-style frame flags for Improved Right Click (IsShown() allein reicht nicht zuverlaessig)
+local artTradestatus = nil
+local artMailstatus = nil
+local artAuctionstatus = nil
+local artBankstatus = nil
+local artMerchantstatus = nil
+
 local function QoL_Dismount()
     local playerName = UnitName("player")
     for i = 1, 40 do
@@ -184,6 +191,34 @@ end
 -- Quest Repeat shared state (declared here so QoL_HandleGossip can access it)
 local qrData = { quest = nil, item = nil }
 
+-- LazyPig-compatible GOSSIP_SHOW state (GossipOptions = types at indices 1..5; dsc = first option text)
+local artGossipTypes = {}
+local artGossipQuestState = { qnpc = nil, index = 0 }
+
+local function QoL_TwipeGossipTable(t)
+    for i = table.getn(t), 1, -1 do
+        table.remove(t, i)
+    end
+    for k in pairs(t) do
+        t[k] = nil
+    end
+    return t
+end
+
+-- LazyPig_ProcessQuests: GetGossipActiveQuests / GetGossipAvailableQuests varargs -> [i] = "title level"
+-- Lua 5.0 / WoW 1.12: "arg" existiert nur bei Vararg-Signatur (...), sonst nil
+local function QoL_ProcessGossipQuestList(...)
+    local quest = {}
+    local n = arg.n
+    local i
+    for i = 1, n, 2 do
+        local title, level = arg[i], arg[i + 1]
+        local idx = (i + 1) / 2
+        quest[idx] = tostring(title or "") .. " " .. tostring(level or "")
+    end
+    return quest
+end
+
 -- ============================================================
 -- Invite helper functions (ported from LazyPig)
 -- ============================================================
@@ -225,7 +260,7 @@ local function QoL_RefreshCamera()
 end
 
 -- ============================================================
--- Gossip auto-select
+-- Gossip auto-select (GOSSIP_SHOW logic 1:1 from LazyPig LazyPig_OnEvent GOSSIP_SHOW)
 -- ============================================================
 local function QoL_HandleGossip()
     -- QUESTREPEAT gossip (1:1 from QuestRepeat addon)
@@ -246,26 +281,97 @@ local function QoL_HandleGossip()
         end
     end
 
-    -- GOSSIP auto-select: single non-interactive option
-    if not QDB("GOSSIP") then return end
-    local opts = { GetGossipOptions() }
-    local numOptions = getn(opts) / 2
-    if numOptions == 1 then
-        local gossipType = opts[2]
-        if gossipType ~= "vendor" and gossipType ~= "trainer" and gossipType ~= "taxi" then
-            SelectGossipOption(1)
+    -- LazyPig: GOSSIP_SHOW runs fully every time; processgossip only gates some branches.
+    -- QBG can still auto-select battlemaster when GOSSIP is off (same as LazyPig).
+    QoL_TwipeGossipTable(artGossipTypes)
+    local dsc = nil
+    local gossipnr = nil
+    local gossipbreak = nil
+    local db = GetQolDB()
+    local processgossip = db.GOSSIP and not IsShiftKeyDown()
+
+    dsc, artGossipTypes[1], _, artGossipTypes[2], _, artGossipTypes[3], _, artGossipTypes[4], _, artGossipTypes[5] = GetGossipOptions()
+
+    local ActiveQuest = QoL_ProcessGossipQuestList(GetGossipActiveQuests())
+    local AvailableQuest = QoL_ProcessGossipQuestList(GetGossipAvailableQuests())
+
+    if artGossipQuestState.qnpc ~= UnitName("npc") then
+        artGossipQuestState.index = 0
+        artGossipQuestState.qnpc = UnitName("npc")
+    end
+
+    if table.getn(AvailableQuest) ~= 0 or table.getn(ActiveQuest) ~= 0 then
+        gossipbreak = true
+    end
+
+    local i
+    for i = 1, 5 do
+        if not artGossipTypes[i] then
+            break
         end
+        if artGossipTypes[i] == "binder" then
+            local bind = GetBindLocation()
+            if not (bind == GetSubZoneText() or bind == GetZoneText() or bind == GetRealZoneText() or bind == GetMinimapZoneText()) then
+                gossipbreak = true
+            end
+        elseif gossipnr then
+            gossipbreak = true
+        elseif artGossipTypes[i] == "trainer" and dsc == "Reset my talents." then
+            gossipbreak = false
+        elseif ((artGossipTypes[i] == "trainer" and processgossip)
+                or (artGossipTypes[i] == "vendor" and processgossip)
+                or (artGossipTypes[i] == "battlemaster" and (db.QBG or processgossip))
+                or (artGossipTypes[i] == "gossip" and processgossip)
+                or (artGossipTypes[i] == "banker" and string.find(dsc or "", "^I would like to check my deposit box.") and processgossip)
+                or (artGossipTypes[i] == "petition" and (IsAltKeyDown() or IsShiftKeyDown() or string.find(dsc or "", "Teleport me to the Molten Core")) and processgossip))
+        then
+            gossipnr = i
+        elseif artGossipTypes[i] == "taxi" and processgossip then
+            gossipnr = i
+            QoL_Dismount()
+        end
+    end
+
+    if not gossipbreak and gossipnr then
+        SelectGossipOption(gossipnr)
     end
 end
 
 -- ============================================================
--- Item-to-trade helper (right click)
+-- LazyPig_ItemIsTradeable (1:1): mail/AH attachability via tooltip lines
 -- ============================================================
 local function QoL_ItemIsTradeable(bag, slot)
+    local i
+    for i = 1, 29 do
+        local fs = getglobal("ART_QoL_TipTextLeft" .. i)
+        if fs then fs:SetText("") end
+    end
     qolTipFrame:SetBagItem(bag, slot)
-    local itemName = ART_QoL_TipTextLeft1
-    if itemName and itemName:GetText() then return true end
-    return false
+    for i = 1, qolTipFrame:NumLines() do
+        local text = getglobal("ART_QoL_TipTextLeft" .. i):GetText()
+        if text == ITEM_SOULBOUND then
+            return nil
+        elseif text == ITEM_BIND_QUEST then
+            return nil
+        elseif text == ITEM_CONJURED then
+            return nil
+        end
+    end
+    return true
+end
+
+-- LazyPig_MailtoCheck: MailTo-Addon-Kompatibilitaet
+local function QoL_MailtoCheck(msg)
+    if not MailTo_Option then return end
+    local db = GetQolDB()
+    local disable = db.RIGHT or db.SHIFTSPLIT
+    MailTo_Option.noshift = disable
+    MailTo_Option.noauction = disable
+    MailTo_Option.notrade = disable
+    MailTo_Option.noclick = disable
+    if msg then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Improved Right Click / Easy Split may override MailTo options.")
+    end
 end
 
 -- ============================================================
@@ -302,44 +408,26 @@ splitWatchFrame:SetScript("OnUpdate", function()
     end
 end)
 
+-- Wie LazyPig_EndSplit bei MAIL/AH/BANK/TRADE zu
+local function QoL_EndSplitShortcut()
+    splitVal   = 1
+    splitTimer = nil
+end
+
 -- ============================================================
--- UseContainerItem hook (right click + shift split)
+-- UseContainerItem hook — Reihenfolge und Zweige wie LazyPig_UseContainerItem
 -- ============================================================
 local _OrigUseContainerItem = UseContainerItem
-UseContainerItem = function(bag, slot)
+UseContainerItem = function(ParentID, ItemID)
     local db = GetQolDB()
 
-    -- Improved right click: move item into open trade/mail/AH slot.
-    -- Skip if LazyPig's RIGHT is active — it handles trade/mail/AH/GMail/CT_Mail
-    -- correctly and is already in the _OrigUseContainerItem chain below.
-    if db.RIGHT and not (LPCONFIG and LPCONFIG.RIGHT) then
-        if TradeFrame and TradeFrame:IsShown() then
-            local count = 1
-            while count <= 7 do
-                if not GetTradePlayerItemLink(count) then
-                    ClickTradeButton(count)
-                    PickupContainerItem(bag, slot)
-                    PlaceTradeItem(count)
-                    return
-                end
-                count = count + 1
-            end
-        end
-        if SendMailFrame and SendMailFrame:IsShown() then
-            PickupContainerItem(bag, slot)
-            ClickSendMailItemButton()
-            if CursorHasItem() then ClearCursor() end
-            return
-        end
-    end
-
-    -- Easy stack split: Shift+right-click, split splitVal items into empty slot
-    -- Skip if LazyPig's SHIFTSPLIT is active — defer to its implementation.
-    -- Alt held in OnUpdate increases splitVal, Ctrl decreases. Resets after 9s.
-    if db.SHIFTSPLIT and not (LPCONFIG and LPCONFIG.SHIFTSPLIT) and IsShiftKeyDown() and not IsAltKeyDown() and not CursorHasItem() then
+    -- 1) SHIFTSPLIT zuerst (LazyPig: vor RIGHT; nicht im Haendlerfenster)
+    if db.SHIFTSPLIT and not (LPCONFIG and LPCONFIG.SHIFTSPLIT)
+            and not CursorHasItem() and not artMerchantstatus
+            and IsShiftKeyDown() and not IsAltKeyDown() then
         local t = GetTime()
         if (t - splitLastClick) < 0.3 then return end
-        local _, itemCount, locked = GetContainerItemInfo(bag, slot)
+        local _, itemCount, locked = GetContainerItemInfo(ParentID, ItemID)
         if not locked and itemCount and itemCount > 1 then
             local count = splitVal
             if count >= itemCount then count = itemCount - 1 end
@@ -347,7 +435,7 @@ UseContainerItem = function(bag, slot)
             local destBag, destSlot
             for b = 0, NUM_BAG_FRAMES do
                 for s = 1, GetContainerNumSlots(b) do
-                    if not (b == bag and s == slot) and not GetContainerItemLink(b, s) then
+                    if not (b == ParentID and s == ItemID) and not GetContainerItemLink(b, s) then
                         destBag, destSlot = b, s
                         break
                     end
@@ -355,7 +443,7 @@ UseContainerItem = function(bag, slot)
                 if destBag then break end
             end
             if destBag then
-                SplitContainerItem(bag, slot, count)
+                SplitContainerItem(ParentID, ItemID, count)
                 PickupContainerItem(destBag, destSlot)
                 splitLastClick = t
                 splitTimer     = t + splitDuration
@@ -364,7 +452,99 @@ UseContainerItem = function(bag, slot)
         end
     end
 
-    _OrigUseContainerItem(bag, slot)
+    -- 2) Improved Right Click (LazyPig_UseContainerItem, ohne LazyPig-Kette)
+    if db.RIGHT and not (LPCONFIG and LPCONFIG.RIGHT) then
+        if artTradestatus and not IsShiftKeyDown() and not IsAltKeyDown() and QoL_ItemIsTradeable(ParentID, ItemID) then
+            PickupContainerItem(ParentID, ItemID)
+            local slot = TradeFrame_GetAvailableSlot and TradeFrame_GetAvailableSlot()
+            if slot then ClickTradeButton(slot) end
+            if CursorHasItem() then ClearCursor() end
+            return
+        end
+
+        if GMailFrame and GMailFrame:IsVisible() and not CursorHasItem() and GMAIL_NUMITEMBUTTONS and GMail then
+            local bag, item = ParentID, ItemID
+            local i
+            for i = 1, GMAIL_NUMITEMBUTTONS do
+                if not _G["GMailButton" .. i].item then
+                    if GMail:ItemIsMailable(bag, item) then
+                        GMail:Print("GMail: Cannot attach item.", 1, 0.5, 0)
+                        return
+                    end
+                    PickupContainerItem(bag, item)
+                    GMail:MailButton_OnClick(_G["GMailButton" .. i])
+                    GMail:UpdateItemButtons()
+                    return
+                end
+            end
+        end
+
+        if CT_MailFrame and CT_MailFrame:IsVisible() and not IsShiftKeyDown() and not IsAltKeyDown() then
+            local bag, item = ParentID, ItemID
+            if ((CT_Mail_GetItemFrame and CT_Mail_GetItemFrame(bag, item))
+                    or (CT_Mail_addItem and CT_Mail_addItem[1] == bag and CT_Mail_addItem[2] == item)) and not special then
+                return
+            end
+            if not CursorHasItem() then
+                CT_MailFrame.bag = bag
+                CT_MailFrame.item = item
+            end
+            if CT_MailFrame:IsVisible() and not CursorHasItem() and CT_MAIL_NUMITEMBUTTONS then
+                local i
+                for i = 1, CT_MAIL_NUMITEMBUTTONS, 1 do
+                    if not _G["CT_MailButton" .. i].item then
+                        local canMail = CT_Mail_ItemIsMailable and CT_Mail_ItemIsMailable(bag, item)
+                        if canMail then
+                            DEFAULT_CHAT_FRAME:AddMessage("<CTMod> Cannot attach item, item is " .. tostring(canMail), 1, 0.5, 0)
+                            return
+                        end
+                        if CT_oldPickupContainerItem then
+                            CT_oldPickupContainerItem(bag, item)
+                        else
+                            PickupContainerItem(bag, item)
+                        end
+                        if CT_MailButton_OnClick then CT_MailButton_OnClick(_G["CT_MailButton" .. i]) end
+                        if CT_Mail_UpdateItemButtons then CT_Mail_UpdateItemButtons() end
+                        return
+                    end
+                end
+            end
+        end
+
+        if artMailstatus and not IsShiftKeyDown() and not IsAltKeyDown() then
+            if not QoL_ItemIsTradeable(ParentID, ItemID) then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Cannot attach item", 1, 0.5, 0)
+                return
+            end
+            if InboxFrame and InboxFrame:IsVisible() then
+                MailFrameTab_OnClick(2)
+                return
+            end
+            if SendMailFrame and SendMailFrame:IsVisible() then
+                PickupContainerItem(ParentID, ItemID)
+                ClickSendMailItemButton()
+                if CursorHasItem() then ClearCursor() end
+                return
+            end
+        end
+
+        if artAuctionstatus and not IsShiftKeyDown() and not IsAltKeyDown() then
+            if not QoL_ItemIsTradeable(ParentID, ItemID) then
+                DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Cannot sell item", 1, 0.5, 0)
+                return
+            end
+            if AuctionFrameAuctions and not AuctionFrameAuctions:IsVisible() and AuctionFrameTab3 then
+                AuctionFrameTab3:Click()
+                return
+            end
+            PickupContainerItem(ParentID, ItemID)
+            if ClickAuctionSellItemButton then ClickAuctionSellItemButton() end
+            if CursorHasItem() then ClearCursor() end
+            return
+        end
+    end
+
+    _OrigUseContainerItem(ParentID, ItemID)
 end
 
 -- ============================================================
@@ -459,6 +639,16 @@ qolEventFrame:RegisterEvent("GOSSIP_SHOW")
 qolEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 qolEventFrame:RegisterEvent("ZONE_CHANGED")
 qolEventFrame:RegisterEvent("SPELL_FAILED_ONLY_SHAPESHIFT")
+qolEventFrame:RegisterEvent("BANKFRAME_OPENED")
+qolEventFrame:RegisterEvent("BANKFRAME_CLOSED")
+qolEventFrame:RegisterEvent("TRADE_SHOW")
+qolEventFrame:RegisterEvent("TRADE_CLOSED")
+qolEventFrame:RegisterEvent("MAIL_SHOW")
+qolEventFrame:RegisterEvent("MAIL_CLOSED")
+qolEventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
+qolEventFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+qolEventFrame:RegisterEvent("MERCHANT_SHOW")
+qolEventFrame:RegisterEvent("MERCHANT_CLOSED")
 
 qolEventFrame:SetScript("OnEvent", function()
     local evt = event
@@ -467,6 +657,47 @@ qolEventFrame:SetScript("OnEvent", function()
     if evt == "PLAYER_LOGIN" or evt == "PLAYER_ENTERING_WORLD" then
         QoL_RefreshCamera()
         QoL_ZoneCheck()
+        if evt == "PLAYER_LOGIN" then
+            QoL_MailtoCheck()
+        end
+
+    elseif evt == "BANKFRAME_OPENED" then
+        artBankstatus = true
+        splitVal = 1
+
+    elseif evt == "BANKFRAME_CLOSED" then
+        artBankstatus = false
+        QoL_EndSplitShortcut()
+
+    elseif evt == "TRADE_SHOW" then
+        artTradestatus = true
+        splitVal = 1
+
+    elseif evt == "TRADE_CLOSED" then
+        artTradestatus = false
+        QoL_EndSplitShortcut()
+
+    elseif evt == "MAIL_SHOW" then
+        artMailstatus = true
+        splitVal = 1
+
+    elseif evt == "MAIL_CLOSED" then
+        artMailstatus = false
+        QoL_EndSplitShortcut()
+
+    elseif evt == "AUCTION_HOUSE_SHOW" then
+        artAuctionstatus = true
+        splitVal = 1
+
+    elseif evt == "AUCTION_HOUSE_CLOSED" then
+        artAuctionstatus = false
+        QoL_EndSplitShortcut()
+
+    elseif evt == "MERCHANT_SHOW" then
+        artMerchantstatus = true
+
+    elseif evt == "MERCHANT_CLOSED" then
+        artMerchantstatus = false
 
     elseif evt == "PARTY_INVITE_REQUEST" then
         local db = GetQolDB()
@@ -517,6 +748,12 @@ qolEventFrame:SetScript("OnEvent", function()
         QoL_HandleGossip()
 
     elseif evt == "ZONE_CHANGED_NEW_AREA" or evt == "ZONE_CHANGED" then
+        if evt == "ZONE_CHANGED_NEW_AREA" then
+            artTradestatus = nil
+            artMailstatus = nil
+            artAuctionstatus = nil
+            artBankstatus = nil
+        end
         QoL_ZoneCheck()
 
     elseif evt == "SPELL_FAILED_ONLY_SHAPESHIFT" then
@@ -735,7 +972,7 @@ function AmptieRaidTools_InitQoLSettings(body)
     cbRight:SetChecked(db.RIGHT)
     cbRight.userOnClick = function() GetQolDB().RIGHT = cbRight:GetChecked() end
     SetCbTooltip(cbRight, "Improved Right Click",
-        "Right-clicking an item in your bags will move it\ninto an open Trade, Mail, or Auction House slot.")
+        "Same behavior as LazyPig: right-click moves items into\nTrade, Mail (incl. inbox tab switch), Auction create,\nor CT_Mail / GMail when open. Uses event flags so the\nbank and default bag clicks are not stolen by mail/trade.\nHold Shift to bypass mail/trade/AH branches.")
 
     local cbShift = ART_CreateCheckbox(panel, "Easy Stack Split / Merge")
     cbShift:SetPoint("TOPLEFT", cbRight, "BOTTOMLEFT", 0, ROW_H)
@@ -773,7 +1010,7 @@ function AmptieRaidTools_InitQoLSettings(body)
     cbGossip:SetChecked(db.GOSSIP)
     cbGossip.userOnClick = function() GetQolDB().GOSSIP = cbGossip:GetChecked() end
     SetCbTooltip(cbGossip, "Gossip Auto Processing",
-        "When an NPC has only one non-vendor/trainer\ngossip option, select it automatically.")
+        "Same behavior as LazyPig: skip gossip choices for\ninnkeepers, flight masters, vendors, etc.\nHold Shift to bypass. Battlemaster auto-enter\nalso respects the \"Re-queue after leaving BG\" option.")
 
     local cbDismount = ART_CreateCheckbox(panel, "Auto Dismount")
     cbDismount:SetPoint("TOPLEFT", cbGossip, "BOTTOMLEFT", 0, ROW_H)
