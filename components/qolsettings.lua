@@ -185,6 +185,37 @@ end
 local qrData = { quest = nil, item = nil }
 
 -- ============================================================
+-- Invite helper functions (ported from LazyPig)
+-- ============================================================
+local function QoL_IsFriend(name)
+    for i = 1, GetNumFriends() do
+        if GetFriendInfo(i) == name then return true end
+    end
+    return false
+end
+
+local function QoL_IsGuildMate(name)
+    if IsInGuild() then
+        for i = 1, GetNumGuildMembers() do
+            if string.lower(GetGuildRosterInfo(i)) == string.lower(name) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function QoL_IsInBGOrQueue()
+    for i = 1, 3 do
+        local status = GetBattlefieldStatus(i)
+        if status == "active" or status == "queued" or status == "confirm" then
+            return true
+        end
+    end
+    return false
+end
+
+-- ============================================================
 -- Camera distance
 -- ============================================================
 local function QoL_RefreshCamera()
@@ -439,14 +470,16 @@ qolEventFrame:SetScript("OnEvent", function()
 
     elseif evt == "PARTY_INVITE_REQUEST" then
         local db = GetQolDB()
-        local inviterName = a1
-        local idle = (not IsInInstance()) or QoL_IsInQueue()
-        local accept = false
-        if db.GINV and QoL_IsGuildMate(inviterName) then accept = true end
-        if db.FINV and QoL_IsFriend(inviterName)    then accept = true end
-        if db.SINV then accept = true end
-        if db.DINV and idle then accept = true end
-        if accept then
+        local name = a1
+        local isGuild  = QoL_IsGuildMate(name)
+        local isFriend = QoL_IsFriend(name)
+        -- Who to accept from (mirrors LazyPig logic)
+        local fromWho = (db.GINV and isGuild)
+                     or (db.FINV and isFriend)
+                     or (db.SINV and not isGuild and not isFriend)
+        -- DINV: accept from anyone, but only when not in instance/BG/queue
+        local idleAccept = db.DINV and not IsInInstance() and not QoL_IsInBGOrQueue()
+        if fromWho or idleAccept then
             AcceptGroup()
             StaticPopup_Hide("PARTY_INVITE")
         end
