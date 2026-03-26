@@ -197,6 +197,7 @@ local function ART_AB_ActivateProfileByName(name)
 	if ART_AB_RestoreChecks_fn     then ART_AB_RestoreChecks_fn()     end
 	if ART_AB_ProfileUI_Refresh_fn then ART_AB_ProfileUI_Refresh_fn() end
 	ART_AB_ScanAndRemoveAll()
+	if ART_CB_OnAutoRemoveChanged then ART_CB_OnAutoRemoveChanged() end
 end
 
 -- Last detected spec (prevents repeated activation)

@@ -593,8 +593,9 @@ end
 -- Protocol
 -- ============================================================
 local BC_PREFIX     = "ART_BC"
-local bcCheckId     = nil    -- current check ID (sender side)
-local bcCheckResults = {}    -- [playerName] = { done=bool, missing={key,...} }
+local bcCheckId        = nil   -- current check ID (sender side)
+local bcCheckResults   = {}    -- [playerName] = { done=bool, missing={key,...} }
+local bcBuffTargetCount = {}   -- [buffKey] = number of players who should have it
 local bcNotifyRefresh = nil  -- callback for overlay refresh
 local bcRcvCheckId    = nil   -- check ID we're currently responding to
 local bcRcvRules      = {}    -- rules received for current check
@@ -633,6 +634,85 @@ local function PlayerHasBuff(buffName)
         if tname and tname == buffName then return true end
     end
     return false
+end
+
+-- Role-key → broad role name (mirrors IC_ROLE_KEY_TO_BROAD in itemchecks.lua)
+local BC_ROLE_BROAD = { TANK="Tank", HEALER="Healer", MELEE="Melee", CASTER="Caster" }
+
+-- Count raid/party members targeted by a rule's "who" filter.
+-- Returns nil when roster data is unavailable (caller falls back to totalResponded).
+local function BCCountTargetedByWho(who)
+    local numRaid  = GetNumRaidMembers()
+    local numParty = GetNumPartyMembers()
+    local total    = numRaid > 0 and numRaid or (numParty + 1)
+
+    if not who or who.type == "everyone" then return total end
+
+    if who.type == "class" then
+        local count = 0
+        if numRaid > 0 then
+            for i = 1, numRaid do
+                local _, cl = UnitClass("raid" .. i)
+                if cl and cl == who.value then count = count + 1 end
+            end
+        else
+            local _, myClass = UnitClass("player")
+            if myClass == who.value then count = count + 1 end
+            for i = 1, numParty do
+                local _, cl = UnitClass("party" .. i)
+                if cl and cl == who.value then count = count + 1 end
+            end
+        end
+        return count
+    end
+
+    if who.type == "role" or who.type == "damagecat" then
+        local specs = ART_RL_GetRosterSpecs and ART_RL_GetRosterSpecs()
+        if not specs then return nil end
+        local count = 0
+        if numRaid > 0 then
+            for i = 1, numRaid do
+                local name = UnitName("raid" .. i)
+                local spec = name and specs[name]
+                if spec then
+                    if who.type == "role" then
+                        local broad = BC_ROLE_BROAD[who.value]
+                        if broad and ART_GetSpecRole and ART_GetSpecRole(spec) == broad then
+                            count = count + 1
+                        end
+                    else  -- damagecat
+                        if ART_GetSpecSubRole then
+                            local sub = ART_GetSpecSubRole(spec) or "Close-up Melee"
+                            if BC_SUBROLE_TO_CAT[sub] == who.value then count = count + 1 end
+                        end
+                    end
+                end
+            end
+        else
+            local mySpec = AmptieRaidTools_PlayerInfo and AmptieRaidTools_PlayerInfo.spec
+            local function checkSpec(spec)
+                if not spec then return false end
+                if who.type == "role" then
+                    local broad = BC_ROLE_BROAD[who.value]
+                    return broad and ART_GetSpecRole and ART_GetSpecRole(spec) == broad
+                else
+                    if ART_GetSpecSubRole then
+                        local sub = ART_GetSpecSubRole(spec) or "Close-up Melee"
+                        return BC_SUBROLE_TO_CAT[sub] == who.value
+                    end
+                end
+                return false
+            end
+            if checkSpec(mySpec) then count = count + 1 end
+            for i = 1, numParty do
+                local name = UnitName("party" .. i)
+                if checkSpec(name and specs[name]) then count = count + 1 end
+            end
+        end
+        return count
+    end
+
+    return nil  -- spec type or unknown: caller uses totalResponded
 end
 
 -- BC_SUBROLE_TO_DAMAGECAT: maps roleroster sub-role label → BC damagecat key
@@ -907,8 +987,26 @@ function ART_BC_StartCheck(profileName)
     if numRules == 0 then return end
 
     -- Generate a new check ID
-    bcCheckId    = tostring(math.mod(floor(GetTime() * 1000), 99999))
-    bcCheckResults = {}
+    bcCheckId        = tostring(math.mod(floor(GetTime() * 1000), 99999))
+    bcCheckResults   = {}
+    bcBuffTargetCount = {}
+
+    -- Compute how many players each buff should apply to (based on rule's who-filter)
+    for ri = 1, numRules do
+        local rule = rules[ri]
+        local targetN = BCCountTargetedByWho(rule.who)
+        if targetN then
+            for oi = 1, getn(rule.conditions or {}) do
+                local grp = rule.conditions[oi]
+                for ai = 1, getn(grp) do
+                    local bk = grp[ai].key
+                    if not bcBuffTargetCount[bk] or targetN > bcBuffTargetCount[bk] then
+                        bcBuffTargetCount[bk] = targetN
+                    end
+                end
+            end
+        end
+    end
 
     -- WoW 1.12: SendAddonMessage to RAID/PARTY does NOT echo back to sender.
     -- Store rules locally so our own PLAYER_AURAS_CHANGED debounce can re-evaluate,
@@ -1155,7 +1253,9 @@ local function RefreshBCOverlay()
         local missList   = missingByBuff[bk]
         table.sort(missList)
         local missCount  = getn(missList)
-        local haveCount  = totalResponded - missCount
+        -- Use per-buff target count if available; fall back to totalResponded
+        local targetN    = bcBuffTargetCount[bk] or totalResponded
+        local haveCount  = math.max(0, targetN - missCount)
 
         row.buffLabel    = buffLabel
         row.missingNames = missList
@@ -1164,7 +1264,7 @@ local function RefreshBCOverlay()
             "|cFFFFCC00" .. buffLabel .. ":|r " ..
             "|cFFFF6644" .. haveCount .. "|r" ..
             "|cFF888888/|r" ..
-            "|cFFAAAAAA" .. totalResponded .. "|r"
+            "|cFFAAAAAA" .. targetN .. "|r"
         )
         row:Show()
     end

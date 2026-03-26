@@ -232,6 +232,9 @@ rlEventFrame:SetScript("OnEvent", function()
     end
 end)
 
+-- Public accessor for buff check target counting
+function ART_RL_GetRosterSpecs() return rosterSpecs end
+
 -- ============================================================
 -- Tab panel
 -- ============================================================

@@ -1563,7 +1563,7 @@ local function GetItemCountInBags(itemId)
                 local _, _, idStr = string.find(link, "item:(%d+):")
                 if idStr and tonumber(idStr) == itemId then
                     local _, stackCount = GetContainerItemInfo(bag, slot)
-                    count = count + (stackCount or 1)
+                    count = count + math.abs(stackCount or 1)
                 end
             end
         end

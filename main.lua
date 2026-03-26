@@ -45,6 +45,7 @@ local NAV_ITEMS = {
 	{ header=true,  label="Rules"        },
 	{ id="itemchecks",   label="Item Checks"  },
 	{ id="buffchecks",   label="Buff Checks"  },
+	{ id="classbuffs",   label="Class Buffs"  },
 	{ id="lootrules",    label="Loot Rules"   },
 	{ header=true,  label="Others"       },
 	{ id="npctrading",   label="NPC Trading"  },
@@ -239,6 +240,7 @@ local function CreateMainFrame()
 	if AmptieRaidTools_InitMTOverlay    then AmptieRaidTools_InitMTOverlay()        end
 	if AmptieRaidTools_InitItemChecks   then AmptieRaidTools_InitItemChecks(body)   end
 	if AmptieRaidTools_InitBuffChecks   then AmptieRaidTools_InitBuffChecks(body)   end
+	if AmptieRaidTools_InitClassBuffs   then AmptieRaidTools_InitClassBuffs(body)   end
 	if AmptieRaidTools_InitLootRules    then AmptieRaidTools_InitLootRules(body)    end
 	if AmptieRaidTools_InitQoLSettings  then AmptieRaidTools_InitQoLSettings(body)  end
 

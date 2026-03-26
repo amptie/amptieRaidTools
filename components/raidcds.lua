@@ -32,8 +32,9 @@ local OVERLAY_MIN_W  = LEFT_PAD + NAME_W + NAME_ICON_GAP + ICON_SZ_BASE + RIGHT_
 
 -- ── Spell table ───────────────────────────────────────────────
 local ART_CD_SPELL_TABLE = {
-	{ name = "Rebirth",             dur = 1800, class = "DRUID",   icon = "Interface\\Icons\\Spell_Nature_Reincarnation"  },
-	{ name = "Innervate",           dur = 360,  class = "DRUID",   icon = "Interface\\Icons\\Spell_Nature_Lightning"      },
+	{ name = "Rebirth",             dur = 1800, class = "DRUID",   icon = "Interface\\Icons\\Spell_Nature_Reincarnation"    },
+	{ name = "Innervate",           dur = 360,  class = "DRUID",   icon = "Interface\\Icons\\Spell_Nature_Lightning"        },
+	{ name = "Tranquility",         dur = 1800, class = "DRUID",   icon = "Interface\\Icons\\Spell_Nature_Tranquility"      },
 	{ name = "Challenging Roar",    dur = 600,  class = "DRUID",   icon = "Interface\\Icons\\Ability_Druid_ChallangingRoar" },
 	{ name = "Hand of Protection",  dur = 300,  class = "PALADIN", icon = "Interface\\Icons\\Spell_Holy_SealOfProtection" },
 	{ name = "Divine Intervention", dur = 3600, class = "PALADIN", icon = "Interface\\Icons\\Spell_Nature_TimeStop"       },
