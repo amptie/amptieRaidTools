@@ -138,6 +138,36 @@ local function QoL_Dismount()
     end
 end
 
+-- Druid shapeshift forms that block normal spellcasting
+local ART_QOL_DRUID_FORM_NAMES = {
+    ["Moonkin Form"]      = true,
+    ["Tree of Life"]      = true,
+    ["Bear Form"]         = true,
+    ["Dire Bear Form"]    = true,
+    ["Cat Form"]          = true,
+    ["Travel Form"]       = true,
+    ["Aquatic Form"]      = true,
+    ["Swift Flight Form"] = true,
+    ["Flight Form"]       = true,
+}
+
+local function QoL_CancelDruidForm()
+    for i = 1, 40 do
+        local buffTex = UnitBuff("player", i)
+        if not buffTex then break end
+        qolTipFrame:SetOwner(UIParent, "ANCHOR_NONE")
+        qolTipFrame:SetUnitBuff("player", i)
+        local line = ART_QoL_TipTextLeft1
+        if line then
+            local txt = line:GetText()
+            if txt and ART_QOL_DRUID_FORM_NAMES[txt] then
+                CancelPlayerBuff(i - 1)
+                return
+            end
+        end
+    end
+end
+
 -- ============================================================
 -- World Chat Mute
 -- ============================================================
@@ -639,6 +669,7 @@ qolEventFrame:RegisterEvent("GOSSIP_SHOW")
 qolEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 qolEventFrame:RegisterEvent("ZONE_CHANGED")
 qolEventFrame:RegisterEvent("SPELL_FAILED_ONLY_SHAPESHIFT")
+qolEventFrame:RegisterEvent("UI_ERROR_MESSAGE")
 qolEventFrame:RegisterEvent("BANKFRAME_OPENED")
 qolEventFrame:RegisterEvent("BANKFRAME_CLOSED")
 qolEventFrame:RegisterEvent("TRADE_SHOW")
@@ -760,6 +791,11 @@ qolEventFrame:SetScript("OnEvent", function()
         if QDB("AUTOSTANCE") then
             -- The client will cast the correct stance; just trigger dismount if mounted
             if QDB("DISMOUNT") then QoL_Dismount() end
+        end
+
+    elseif evt == "UI_ERROR_MESSAGE" then
+        if QDB("AUTOSTANCE") and a1 and strfind(a1, "shapeshift") then
+            QoL_CancelDruidForm()
         end
     end
 end)

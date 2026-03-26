@@ -639,6 +639,19 @@ end
 -- Role-key → broad role name (mirrors IC_ROLE_KEY_TO_BROAD in itemchecks.lua)
 local BC_ROLE_BROAD = { TANK="Tank", HEALER="Healer", MELEE="Melee", CASTER="Caster" }
 
+-- BC_SUBROLE_TO_DAMAGECAT: maps roleroster sub-role label → BC damagecat key
+-- Must be declared before BCCountTargetedByWho which references it.
+local BC_SUBROLE_TO_CAT = {
+    ["Arcane"]          = "ARCANE",
+    ["Fire"]            = "FIRE",
+    ["Frost"]           = "FROST",
+    ["Nature"]          = "NATURE",
+    ["Shadow"]          = "SHADOW",
+    ["Physical Melee"]  = "PHYSICAL_MELEE",
+    ["Physical Ranged"] = "PHYSICAL_RANGED",
+    ["Hybrid Melee"]    = "HYBRID_MELEE",
+}
+
 -- Count raid/party members targeted by a rule's "who" filter.
 -- Returns nil when roster data is unavailable (caller falls back to totalResponded).
 local function BCCountTargetedByWho(who)
@@ -714,18 +727,6 @@ local function BCCountTargetedByWho(who)
 
     return nil  -- spec type or unknown: caller uses totalResponded
 end
-
--- BC_SUBROLE_TO_DAMAGECAT: maps roleroster sub-role label → BC damagecat key
-local BC_SUBROLE_TO_CAT = {
-    ["Arcane"]          = "ARCANE",
-    ["Fire"]            = "FIRE",
-    ["Frost"]           = "FROST",
-    ["Nature"]          = "NATURE",
-    ["Shadow"]          = "SHADOW",
-    ["Physical Melee"]  = "PHYSICAL_MELEE",
-    ["Physical Ranged"] = "PHYSICAL_RANGED",
-    ["Hybrid Melee"]    = "HYBRID_MELEE",
-}
 
 local function BCPlayerMatchesWho(who)
     if not who or who.type == "everyone" then return true end
@@ -1192,7 +1193,8 @@ local function RefreshBCOverlay()
     end
 
     -- There are missing buffs → auto-show if overlay is enabled but was auto-hidden
-    if db2 and db2.bcOverlayShown and not bcOverlayFrame:IsShown() then
+    local inGroup = GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0
+    if db2 and db2.bcOverlayShown and not bcOverlayFrame:IsShown() and inGroup then
         bcOverlayFrame:Show()
     end
     if not bcOverlayFrame:IsShown() then return end  -- user explicitly closed
@@ -2276,6 +2278,11 @@ function AmptieRaidTools_InitBuffChecks(body)
             local db2 = amptieRaidToolsDB
             if db2 and db2.bcOverlayShown then
                 bcRosterDirty = true   -- handled by 5s poll timer
+            end
+            -- Close overlay when leaving group entirely
+            if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+                if bcOverlayFrame then bcOverlayFrame:Hide() end
+                UpdateOvlBtn()
             end
         end
     end)

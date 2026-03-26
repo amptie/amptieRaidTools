@@ -279,20 +279,15 @@ local CB_OVL_HDR_H   = 24
 local CB_OVL_ROW_H   = 18
 local CB_OVL_MAX_VIS = 14
 
--- Show/hide overlay based on saved state and group membership
+-- Show/hide overlay based on saved state and group membership.
+-- Always hide when not in any group (raid or party), regardless of onlyInGroup.
 local function CBOverlayUpdateVisibility()
     if not cbOverlayFrame then return end
     local db = GetCBDB()
-    if not db.ovlShown then
+    local inGroup = GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0
+    if not db.ovlShown or not inGroup then
         cbOverlayFrame:Hide()
         return
-    end
-    if db.onlyInGroup then
-        local inGroup = GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0
-        if not inGroup then
-            cbOverlayFrame:Hide()
-            return
-        end
     end
     cbOverlayFrame:Show()
 end

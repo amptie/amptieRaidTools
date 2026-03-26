@@ -350,3 +350,12 @@ function AmptieRaidTools_UpdateMTOverlay()
 	LayoutOverlay()
 	UpdateOverlay()
 end
+
+local ART_MT_GroupEvt = CreateFrame("Frame", "ART_MT_GroupEvt", UIParent)
+ART_MT_GroupEvt:RegisterEvent("RAID_ROSTER_UPDATE")
+ART_MT_GroupEvt:RegisterEvent("PARTY_MEMBERS_CHANGED")
+ART_MT_GroupEvt:SetScript("OnEvent", function()
+	if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+		if ovlFrame then ovlFrame:Hide() end
+	end
+end)
