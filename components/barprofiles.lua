@@ -15,9 +15,11 @@ local tinsert = table.insert
 local pairs   = pairs
 local GetTime = GetTime
 
--- WoW 1.12: Slots 1–72 = sechs Standardleisten zu je 12; 73–120 = Haltungs-/Form-/Bonusleisten
--- (Krieger, Druid, Schurke, Priester usw.). Einige Clients/Addons nutzen bis 144 — mit abdecken.
-local ART_BP_MAX_SLOT = 144
+-- WoW 1.12: Slots 1–72 = 6 standard bars (12 each); 73–120 = stance/form/bonus bars;
+-- 121–144 = extra bars.  RingMenu and similar addons can map buttons to higher slots
+-- (RingMenu default startPageID=13 → slots 13–24, but configurable).  Use 180 to
+-- cover up to page 15, matching any realistic RingMenu or Bartender configuration.
+local ART_BP_MAX_SLOT = 180
 
 -- ============================================================
 -- Hidden tooltip for reading action slot names
@@ -39,9 +41,31 @@ local function ART_BP_TipRightLine(n)
 end
 
 -- ============================================================
--- Read a single action slot (type + name)
+-- Build a fast-lookup set of all known spell names (used during capture)
 -- ============================================================
-local function ART_BP_GetSlotData(slot)
+local function ART_BP_BuildSpellNameSet()
+	local set = {}
+	for t = 1, MAX_SKILLLINE_TABS do
+		local _, _, offset, numSpells = GetSpellTabInfo(t)
+		if not offset then break end
+		for s = 1, numSpells do
+			local sn = GetSpellName(offset + s, BOOKTYPE_SPELL)
+			if sn then set[sn] = true end
+		end
+	end
+	return set
+end
+
+-- ============================================================
+-- Read a single action slot (type + name) — NO cursor interaction
+-- ============================================================
+-- Using PickupAction/PlaceAction to detect spell vs item is fragile:
+-- some slots (stance bars in the wrong stance, bonus bars, etc.) silently
+-- reject PickupAction or PlaceAction, leaving the cursor dirty and causing
+-- every subsequent PickupAction to SWAP instead of pick up, cascading corrupt
+-- data for all remaining slots.  Instead we read the tooltip non-destructively
+-- and compare the name against the spellbook to determine the type.
+local function ART_BP_GetSlotData(slot, spellSet)
 	if not HasAction(slot) then return nil end
 
 	-- Macros: GetActionText is non-destructive and returns the macro name
@@ -50,22 +74,16 @@ local function ART_BP_GetSlotData(slot)
 		return {t = "macro", n = mname}
 	end
 
-	-- Wie ActionBarProfiles: erst SetAction, dann Pickup/Place, dann Tooltip auslesen
-	-- (vorheriger Code verlangte TextLeft1 vor Pickup — das faellt bei manchen Slots aus)
-	ART_BP_Tip:ClearLines()
+	-- Read the action name via hidden tooltip (no PickupAction needed).
+	-- SetOwner must be called before every Set* call in WoW 1.12: without it
+	-- the tooltip silently stops returning data after the first capture run.
+	ART_BP_Tip:SetOwner(UIParent, "ANCHOR_NONE")
 	ART_BP_Tip:SetAction(slot)
-	PickupAction(slot)
-	local isSpell = CursorHasSpell()
-	PlaceAction(slot)
+	local name = ART_BP_TipLine(1)
+	if not name or name == "" then return nil end
 
-	if isSpell then
-		local name = ART_BP_TipLine(1)
-		if not name or name == "" then
-			ART_BP_Tip:ClearLines()
-			ART_BP_Tip:SetAction(slot)
-			name = ART_BP_TipLine(1)
-		end
-		if not name or name == "" then return nil end
+	if spellSet[name] then
+		-- Known spell — capture rank if the tooltip shows one
 		local rank = ART_BP_TipLine(2)
 		if rank and string.find(rank, "^Rank") then
 			return {t = "spell", n = name, r = rank}
@@ -77,13 +95,6 @@ local function ART_BP_GetSlotData(slot)
 		return {t = "spell", n = name}
 	end
 
-	local name = ART_BP_TipLine(1)
-	if not name or name == "" then
-		ART_BP_Tip:ClearLines()
-		ART_BP_Tip:SetAction(slot)
-		name = ART_BP_TipLine(1)
-	end
-	if not name or name == "" then return nil end
 	return {t = "item", n = name}
 end
 
@@ -92,10 +103,11 @@ end
 -- ============================================================
 local function ART_BP_CaptureProfile(name)
 	if not name or name == "" or name == "none" then return 0 end
+	local spellSet = ART_BP_BuildSpellNameSet()
 	ART_BarProfiles[name] = {}
 	local count = 0
 	for i = 1, ART_BP_MAX_SLOT do
-		local data = ART_BP_GetSlotData(i)
+		local data = ART_BP_GetSlotData(i, spellSet)
 		if data then
 			ART_BarProfiles[name][i] = data
 			count = count + 1
@@ -132,7 +144,8 @@ local function ART_BP_BuildItemMap()
 	for bag = 0, NUM_BAG_SLOTS do
 		for s = 1, GetContainerNumSlots(bag) do
 			if GetContainerItemInfo(bag, s) then
-				ART_BP_Tip:ClearLines()
+				-- SetOwner required before every Set* call in WoW 1.12
+				ART_BP_Tip:SetOwner(UIParent, "ANCHOR_NONE")
 				ART_BP_Tip:SetBagItem(bag, s)
 				local n = ART_BP_TipLine(1)
 				if n and not map[n] then
@@ -163,18 +176,13 @@ local function ART_BP_ApplyProfile(name)
 
 	ClearCursor()
 
-	-- Helper: clear a slot before placing new content
-	local function ClearSlot(i)
-		if HasAction(i) then
-			PickupAction(i)
-			ClearCursor()
-		end
-	end
-
 	-- Restore slot by slot.
+	-- Pattern: ClearCursor() before every pickup, ClearCursor() after every
+	-- PlaceAction.  This ensures a dirty cursor from one slot never cascades
+	-- into the next (PlaceAction swaps if the slot is non-empty; the post-clear
+	-- discards the old content cleanly).
 	-- Spells and macros are always available → always replace the slot.
-	-- Items: only replace if found in inventory; otherwise leave the slot as-is
-	-- so that items picked up later in the session (e.g. raid drops) stay bound.
+	-- Items: only replace if found in inventory; otherwise leave the slot as-is.
 	for i = 1, ART_BP_MAX_SLOT do
 		local d = prof[i]
 		if d then
@@ -182,9 +190,10 @@ local function ART_BP_ApplyProfile(name)
 				local key = d.r and (d.n .. "|" .. d.r) or d.n
 				local idx = spellMap[key] or spellMap[d.n]
 				if idx then
-					ClearSlot(i)
+					ClearCursor()
 					PickupSpell(idx, BOOKTYPE_SPELL)
 					PlaceAction(i)
+					ClearCursor()
 					applied = applied + 1
 				else
 					tinsert(failList, d.n)
@@ -193,16 +202,18 @@ local function ART_BP_ApplyProfile(name)
 			elseif d.t == "macro" then
 				local idx = GetMacroIndexByName(d.n)
 				if idx and idx > 0 then
-					ClearSlot(i)
+					ClearCursor()
 					PickupMacro(idx)
 					PlaceAction(i)
+					ClearCursor()
 					applied = applied + 1
 				elseif type(GetSuperMacroInfo) == "function" then
 					local sn = GetSuperMacroInfo(d.n)
 					if sn then
-						ClearSlot(i)
+						ClearCursor()
 						PickupMacro(0, d.n)
 						PlaceAction(i)
+						ClearCursor()
 						applied = applied + 1
 					else
 						tinsert(failList, d.n .. " (macro)")
@@ -214,22 +225,22 @@ local function ART_BP_ApplyProfile(name)
 			elseif d.t == "item" then
 				local loc = itemMap[d.n]
 				if loc then
-					ClearSlot(i)
+					ClearCursor()
 					PickupContainerItem(loc.bag, loc.slot)
 					PlaceAction(i)
+					ClearCursor()
 					applied = applied + 1
 				else
 					-- Try equipped items
-					local found = false
 					for inv = 1, 19 do
-						ART_BP_Tip:ClearLines()
+						ART_BP_Tip:SetOwner(UIParent, "ANCHOR_NONE")
 						ART_BP_Tip:SetInventoryItem("player", inv)
 						if ART_BP_TipLine(1) == d.n then
-							ClearSlot(i)
+							ClearCursor()
 							PickupInventoryItem(inv)
 							PlaceAction(i)
+							ClearCursor()
 							applied = applied + 1
-							found = true
 							break
 						end
 					end
@@ -313,7 +324,7 @@ end
 -- UI
 -- ============================================================
 local ART_BP_SPECS_BY_CLASS = {
-	WARRIOR = { "Mortal Strike", "Fury + Sweeping Strikes", "Fury", "Fury Prot", "Tank", "Deep Prot" },
+	WARRIOR = { "Arms", "Fury Sweeping Strikes", "Fury", "Fury Protection", "Protection", "Deep Protection" },
 	PALADIN = { "Shockadin", "Retribution", "Holy", "Protection" },
 	MAGE    = { "Arcane", "Fire", "Frost" },
 	DRUID   = { "Balance", "Feral Cat", "Feral Bear", "Restoration" },

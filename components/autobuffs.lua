@@ -544,7 +544,7 @@ function AmptieRaidTools_InitAutoBuffs(body)
 	-- ============================================================
 
 	local ART_AB_SpecsByClass = {
-		WARRIOR = { "Mortal Strike", "Fury + Sweeping Strikes", "Fury", "Fury Prot", "Tank", "Deep Prot" },
+		WARRIOR = { "Arms", "Fury Sweeping Strikes", "Fury", "Fury Protection", "Protection", "Deep Protection" },
 		PALADIN = { "Shockadin", "Retribution", "Holy", "Protection" },
 		MAGE    = { "Arcane", "Fire", "Frost" },
 		DRUID   = { "Balance", "Feral Cat", "Feral Bear", "Restoration" },

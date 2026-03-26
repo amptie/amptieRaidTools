@@ -30,7 +30,7 @@ local ITEM_IDS = {
 	["Arcane Powder"] = 17020,
 	["Sacred Candle"] = 17029,
 	["Wild Thornroot"] = 17026,
-	["Ironwood Seed"] = 17034,
+	["Ironwood Seed"] = 17038,
 	["Flash Powder"] = 5140,
 }
 
