@@ -11,6 +11,13 @@ local UnitBuff  = UnitBuff
 local UnitClass = UnitClass
 local UnitName  = UnitName
 
+-- SuperWoW detection: SpellInfo only exists with SuperWoW
+local CB_HAS_SUPERWOW = (SpellInfo ~= nil)
+
+-- Hidden tooltip for non-SuperWoW buff name scanning (tooltip approach)
+local cbScanTip     = CreateFrame("GameTooltip", "ART_CB_ScanTip", UIParent, "GameTooltipTemplate")
+local cbScanTipText = nil  -- resolved lazily on first use
+
 -- ============================================================
 -- Buff group definitions
 -- ============================================================
@@ -244,12 +251,27 @@ local function CBScanAll()
 
             -- Collect all buff names for this unit (one pass, reuse cbNameSet)
             for k in pairs(cbNameSet) do cbNameSet[k] = nil end
-            for i = 1, 64 do
-                local tex, _, spellId = UnitBuff(unit, i)
-                if not tex then break end
-                if spellId and spellId > 0 and SpellInfo then
-                    local sname = SpellInfo(spellId)
-                    if sname then cbNameSet[sname] = true end
+            if CB_HAS_SUPERWOW then
+                -- SuperWoW: UnitBuff returns spellId as 3rd value → SpellInfo → name
+                for i = 1, 64 do
+                    local tex, _, spellId = UnitBuff(unit, i)
+                    if not tex then break end
+                    if spellId and spellId > 0 then
+                        local sname = SpellInfo(spellId)
+                        if sname then cbNameSet[sname] = true end
+                    end
+                end
+            else
+                -- Fallback: hidden tooltip reads buff name from TextLeft1
+                if not cbScanTipText then
+                    cbScanTipText = getglobal("ART_CB_ScanTipTextLeft1")
+                end
+                for i = 1, 32 do
+                    cbScanTip:SetOwner(UIParent, "ANCHOR_NONE")
+                    cbScanTip:SetUnitBuff(unit, i)
+                    local name = cbScanTipText and cbScanTipText:GetText()
+                    if not name or name == "" then break end
+                    cbNameSet[name] = true
                 end
             end
 
@@ -581,7 +603,7 @@ function AmptieRaidTools_InitClassBuffs(body)
 
     local sub = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
-    sub:SetText("Tracks class buffs across the raid. Uses SuperWoW buff scanning.")
+    sub:SetText("Tracks class buffs across the raid. Uses SuperWoW buff scanning (tooltip fallback for non-SuperWoW).")
     sub:SetTextColor(0.65, 0.65, 0.7, 1)
 
     local function MakeDivider(anchor, offY)
@@ -751,7 +773,8 @@ cbEventFrame:RegisterEvent("PLAYER_LOGIN")
 cbEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 cbEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 cbEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
-cbEventFrame:RegisterEvent("UNIT_AURA")
+-- UNIT_AURA intentionally omitted: fires hundreds of times/sec in raids.
+-- The 3s poll (cbPollFrame) is sufficient for Class Buffs tracking.
 
 local cbPollFrame = CreateFrame("Frame", nil, UIParent)
 cbPollFrame:SetScript("OnUpdate", function()
@@ -809,7 +832,5 @@ cbEventFrame:SetScript("OnEvent", function()
             if cbOverlayFrame:IsShown() then RefreshCBOverlay() end
         end
 
-    elseif evt == "UNIT_AURA" then
-        CBTriggerScan()
     end
 end)

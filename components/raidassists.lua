@@ -17,7 +17,7 @@ local mmax    = math.max
 local MT_PREFIX        = "ART_MT"
 local NUM_MT_SLOTS     = 8
 local MAX_KEYWORD_ROWS = 6    -- max invite keywords (6 is plenty)
-local MAX_AA_NAMES     = 40   -- max auto-assist names stored
+local MAX_AA_NAMES     = 80   -- max auto-assist names stored
 local DISP_ROWS        = 8    -- visible AA rows at once
 
 -- ── DB ────────────────────────────────────────────────────────
@@ -149,6 +149,16 @@ raEvt:SetScript("OnEvent", function()
 	local a1, a2 = arg1, arg2
 
 	if evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
+		if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+			local db = GetDB()
+			if db then
+				for i = 1, NUM_MT_SLOTS do
+					db.mainTanks[i] = ""
+				end
+				if RefreshMTUI then RefreshMTUI() end
+				if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
+			end
+		end
 		RunAutoAssists()
 
 	elseif evt == "CHAT_MSG_WHISPER" then
@@ -375,14 +385,17 @@ function AmptieRaidTools_InitRaidAssists(body)
 
 	local aaDesc = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	aaDesc:SetPoint("TOPLEFT", aaHdr, "BOTTOMLEFT", 0, -4)
-	aaDesc:SetText("Auto-promote to assistant when joining raid (max 40)")
+	aaDesc:SetText("Auto-promote to assistant when joining raid (max 80)")
 	aaDesc:SetTextColor(0.52, 0.52, 0.52, 1)
 
-	local aaEB = MakeEB(panel, 196, 24)
+	local aaEB = MakeEB(panel, 140, 64)
 	aaEB:SetPoint("TOPLEFT", aaDesc, "BOTTOMLEFT", 0, -6)
 
-	local aaAddBtn = MakeBtn(panel, "+ Add", 62, 22)
+	local aaAddBtn = MakeBtn(panel, "+ Add", 52, 22)
 	aaAddBtn:SetPoint("LEFT", aaEB, "RIGHT", 4, 0)
+
+	local aaImportBtn = MakeBtn(panel, "Import", 52, 22)
+	aaImportBtn:SetPoint("LEFT", aaAddBtn, "RIGHT", 4, 0)
 
 	-- scroll state
 	local aaScrollOff = 0
@@ -443,24 +456,104 @@ function AmptieRaidTools_InitRaidAssists(body)
 		end
 	end)
 
-	local function DoAddAssist()
-		local txt = aaEB:GetText()
+	local function DoImportText(txt)
 		if not txt or txt == "" then return end
 		local db = GetDB()
 		if not db then return end
-		if getn(db.autoAssists) >= MAX_AA_NAMES then return end
-		for i = 1, getn(db.autoAssists) do
-			if db.autoAssists[i] == txt then
-				aaEB:SetText(""); return
+		for token in string.gfind(txt, "[^,;\n]+") do
+			local name = string.gsub(token, "^%s*(.-)%s*$", "%1")
+			if name ~= "" then
+				if getn(db.autoAssists) >= MAX_AA_NAMES then break end
+				local dupe = false
+				for i = 1, getn(db.autoAssists) do
+					if db.autoAssists[i] == name then dupe = true; break end
+				end
+				if not dupe then
+					tinsert(db.autoAssists, name)
+				end
 			end
 		end
-		tinsert(db.autoAssists, txt)
+		RefreshAARows()
+	end
+
+	local function DoAddAssist()
+		local txt = aaEB:GetText()
+		if not txt or txt == "" then return end
+		DoImportText(txt)
 		aaEB:SetText("")
 		aaEB:ClearFocus()
-		RefreshAARows()
 	end
 	aaAddBtn:SetScript("OnClick", DoAddAssist)
 	aaEB:SetScript("OnEnterPressed", function() DoAddAssist() end)
+
+	-- ── Import Popup ───────────────────────────────────────────
+	local aaPopup = CreateFrame("Frame", "ART_AAImportPopup", UIParent)
+	aaPopup:SetWidth(340)
+	aaPopup:SetHeight(220)
+	aaPopup:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
+	aaPopup:SetFrameStrata("FULLSCREEN_DIALOG")
+	aaPopup:SetMovable(true)
+	aaPopup:EnableMouse(true)
+	aaPopup:RegisterForDrag("LeftButton")
+	aaPopup:SetScript("OnDragStart", function() this:StartMoving() end)
+	aaPopup:SetScript("OnDragStop",  function() this:StopMovingOrSizing() end)
+	aaPopup:SetBackdrop({
+		bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+		tile = true, tileSize = 32, edgeSize = 16,
+		insets = { left = 4, right = 4, top = 4, bottom = 4 },
+	})
+	aaPopup:Hide()
+
+	local popTitle = aaPopup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	popTitle:SetPoint("TOP", aaPopup, "TOP", 0, -10)
+	popTitle:SetText("Import Auto-Assists")
+	popTitle:SetTextColor(1, 0.82, 0, 1)
+
+	local popHint = aaPopup:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	popHint:SetPoint("TOP", popTitle, "BOTTOM", 0, -4)
+	popHint:SetText("Comma, semicolon or newline separated")
+	popHint:SetTextColor(0.55, 0.55, 0.55, 1)
+
+	-- ScrollFrame + multiline EditBox
+	local popSF = CreateFrame("ScrollFrame", "ART_AAImportSF", aaPopup, "UIPanelScrollFrameTemplate")
+	popSF:SetPoint("TOPLEFT",  aaPopup, "TOPLEFT",  10, -48)
+	popSF:SetPoint("BOTTOMRIGHT", aaPopup, "BOTTOMRIGHT", -30, 40)
+
+	local popEB = CreateFrame("EditBox", nil, popSF)
+	popEB:SetWidth(popSF:GetWidth())
+	popEB:SetHeight(1)   -- grows with content
+	popEB:SetMultiLine(true)
+	popEB:SetMaxLetters(4096)
+	popEB:SetFontObject(GameFontHighlightSmall)
+	popEB:SetTextInsets(4, 4, 4, 4)
+	popEB:SetAutoFocus(false)
+	popEB:SetScript("OnEscapePressed", function() aaPopup:Hide() end)
+	popSF:SetScrollChild(popEB)
+
+	local popImport = MakeBtn(aaPopup, "Import", 80, 22)
+	popImport:SetPoint("BOTTOMRIGHT", aaPopup, "BOTTOMRIGHT", -10, 10)
+	popImport:SetScript("OnClick", function()
+		DoImportText(popEB:GetText())
+		popEB:SetText("")
+		aaPopup:Hide()
+	end)
+
+	local popCancel = MakeBtn(aaPopup, "Cancel", 70, 22)
+	popCancel:SetPoint("RIGHT", popImport, "LEFT", -6, 0)
+	popCancel:SetScript("OnClick", function()
+		popEB:SetText("")
+		aaPopup:Hide()
+	end)
+
+	aaImportBtn:SetScript("OnClick", function()
+		if aaPopup:IsShown() then
+			aaPopup:Hide()
+		else
+			aaPopup:Show()
+			popEB:SetFocus()
+		end
+	end)
 
 	for i = 1, DISP_ROWS do
 		local row = CreateFrame("Frame", nil, aaListBox)
