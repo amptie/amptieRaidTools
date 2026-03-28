@@ -749,6 +749,15 @@ function AmptieRaidTools_InitClassBuffs(body)
         end
     end
 
+    -- ── Buff Bars settings section (buffbars.lua) ────────────────
+    local bbAnchor = panel:CreateFontString(nil, "OVERLAY")
+    bbAnchor:SetPoint("TOPLEFT", hdrG, "BOTTOMLEFT", 0, -4 - (math.ceil(getn(CB_GROUPS) / NUM_COLS)) * ROW_H - 4)
+
+    local bbRefresh = nil
+    if ART_BB_BuildSettingsSection then
+        bbRefresh = ART_BB_BuildSettingsSection(panel, bbAnchor)
+    end
+
     AmptieRaidTools_RegisterComponent("classbuffs", panel)
 
     -- Restore overlay state and refresh button appearance when tab is shown
@@ -761,6 +770,7 @@ function AmptieRaidTools_InitClassBuffs(body)
             RefreshCBOverlay()
         end
         UpdateCBToggle()
+        if bbRefresh then bbRefresh() end
     end)
 end
 
@@ -811,6 +821,7 @@ cbEventFrame:SetScript("OnEvent", function()
         CBApplyOwnAutoRemove()
         CBBroadcastAutoRemove()
         CBTriggerScan()
+        if AmptieRaidTools_InitBuffBars then AmptieRaidTools_InitBuffBars() end
 
     elseif evt == "PLAYER_ENTERING_WORLD" then
         CBApplyOwnAutoRemove()

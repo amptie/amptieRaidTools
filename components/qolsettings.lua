@@ -151,19 +151,31 @@ local ART_QOL_DRUID_FORM_NAMES = {
     ["Flight Form"]       = true,
 }
 
+local QOL_HAS_SUPERWOW = (SpellInfo ~= nil)
+
 local function QoL_CancelDruidForm()
-    for i = 1, 40 do
-        local buffTex = UnitBuff("player", i)
-        if not buffTex then break end
-        qolTipFrame:SetOwner(UIParent, "ANCHOR_NONE")
-        qolTipFrame:SetUnitBuff("player", i)
-        local line = ART_QoL_TipTextLeft1
-        if line then
-            local txt = line:GetText()
-            if txt and ART_QOL_DRUID_FORM_NAMES[txt] then
-                CancelPlayerBuff(i - 1)
-                return
+    for slot = 0, 39 do
+        local buffIndex = GetPlayerBuff(slot, "HELPFUL")
+        if buffIndex < 0 then break end
+        local matched = false
+        if QOL_HAS_SUPERWOW then
+            -- SuperWoW: UnitBuff returns spellId as 3rd value → SpellInfo → name
+            local _, _, spellId = UnitBuff("player", slot + 1)
+            if spellId and spellId > 0 then
+                local sname = SpellInfo(spellId)
+                matched = sname and ART_QOL_DRUID_FORM_NAMES[sname]
             end
+        end
+        if not matched then
+            -- Non-SuperWoW fallback: tooltip scan via SetPlayerBuff (uses correct buffIndex)
+            qolTipFrame:SetOwner(UIParent, "ANCHOR_NONE")
+            qolTipFrame:SetPlayerBuff(buffIndex)
+            local txt = ART_QoL_TipTextLeft1 and ART_QoL_TipTextLeft1:GetText()
+            matched = txt and ART_QOL_DRUID_FORM_NAMES[txt]
+        end
+        if matched then
+            CancelPlayerBuff(buffIndex)
+            return
         end
     end
 end

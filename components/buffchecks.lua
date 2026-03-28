@@ -610,28 +610,34 @@ end
 -- SuperWoW: UnitBuff returns (texture, count, spellId).
 -- SpellInfo(spellId) returns the buff name synchronously — no tooltip scan needed.
 -- Tooltip scan kept as fallback for any buff whose spellId isn't resolved.
-local ART_BC_ScanTip = CreateFrame("GameTooltip", "ART_BC_ScanTip", nil, "GameTooltipTemplate")
-ART_BC_ScanTip:SetOwner(UIParent, "ANCHOR_NONE")
+local ART_BC_ScanTip     = CreateFrame("GameTooltip", "ART_BC_ScanTip", nil, "GameTooltipTemplate")
+local ART_BC_ScanTipText = nil  -- resolved lazily on first use
+local BC_HAS_SUPERWOW    = (SpellInfo ~= nil)
 
 local function PlayerHasBuff(buffName)
-    for i = 1, 32 do
-        local tex, _, spellId = UnitBuff("player", i)
-        if not tex then break end
-        -- Primary: SpellInfo (SuperWoW, always synchronous)
-        -- Guard with SpellInfo ~= nil: older TurtleWoW clients return spellId from
-        -- UnitBuff but may not yet expose SpellInfo, so fall through to tooltip scan.
-        if spellId and spellId > 0 and SpellInfo then
-            local sname = SpellInfo(spellId)
-            if sname and sname == buffName then return true end
+    if BC_HAS_SUPERWOW then
+        -- SuperWoW: UnitBuff returns spellId as 3rd value → SpellInfo → name
+        for i = 1, 64 do
+            local tex, _, spellId = UnitBuff("player", i)
+            if not tex then break end
+            if spellId and spellId > 0 then
+                local sname = SpellInfo(spellId)
+                if sname and sname == buffName then return true end
+            end
         end
-    end
-    -- Fallback: tooltip scan
-    for i = 0, 31 do
-        if not UnitBuff("player", i + 1) then break end
-        ART_BC_ScanTip:ClearLines()
-        ART_BC_ScanTip:SetPlayerBuff(i)
-        local tname = getglobal("ART_BC_ScanTipTextLeft1"):GetText()
-        if tname and tname == buffName then return true end
+    else
+        -- Fallback: hidden tooltip reads buff name via SetPlayerBuff (0-based)
+        -- SetOwner must be called before every Set* call on a hidden tooltip
+        if not ART_BC_ScanTipText then
+            ART_BC_ScanTipText = getglobal("ART_BC_ScanTipTextLeft1")
+        end
+        for i = 0, 31 do
+            if not UnitBuff("player", i + 1) then break end
+            ART_BC_ScanTip:SetOwner(UIParent, "ANCHOR_NONE")
+            ART_BC_ScanTip:SetPlayerBuff(i)
+            local tname = ART_BC_ScanTipText and ART_BC_ScanTipText:GetText()
+            if tname and tname == buffName then return true end
+        end
     end
     return false
 end

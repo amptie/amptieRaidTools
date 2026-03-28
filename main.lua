@@ -58,6 +58,12 @@ local bodyFrame  = nil
 local currentNavId = "home"
 local registeredComponents = {}
 
+-- Scroll state (set in CreateMainFrame, used by ShowComponent)
+local bodyScrollFrame = nil
+local bodyScrollBar   = nil
+local SCROLL_CHILD_H  = 900   -- tall enough for any settings panel
+local SCROLLBAR_W     = 16
+
 -- ============================================================
 -- Frame öffnen/schließen
 -- ============================================================
@@ -81,6 +87,9 @@ end
 function AmptieRaidTools_ShowComponent(componentId)
 	currentNavId = componentId or "home"
 	if not bodyFrame then return end
+	-- Reset scroll to top on every tab switch
+	if bodyScrollFrame then bodyScrollFrame:SetVerticalScroll(0) end
+	if bodyScrollBar   then bodyScrollBar:SetValue(0) end
 	for id, frame in pairs(registeredComponents) do
 		if id == currentNavId then
 			frame:SetFrameLevel(bodyFrame:GetFrameLevel() + 10)
@@ -219,10 +228,53 @@ local function CreateMainFrame()
 		end
 	end
 
-	-- Body
-	local body = CreateFrame("Frame", "AmptieRaidToolsBody", f)
-	body:SetPoint("TOPLEFT", nav, "TOPRIGHT", 8, 0)
-	body:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
+	-- Body: ScrollFrame viewport
+	local bodyScroll = CreateFrame("ScrollFrame", "AmptieRaidToolsBodyScroll", f)
+	bodyScroll:SetPoint("TOPLEFT",     nav, "TOPRIGHT",        8, 0)
+	bodyScroll:SetPoint("BOTTOMRIGHT", f,   "BOTTOMRIGHT", -(8 + SCROLLBAR_W + 4), 8)
+	bodyScroll:EnableMouseWheel(true)
+
+	-- Scrollable content frame (all component panels go here)
+	local bodyW = FRAME_WIDTH - NAV_WIDTH - NAV_PADDING - 8 - (8 + SCROLLBAR_W + 4)
+	local body = CreateFrame("Frame", "AmptieRaidToolsBody", bodyScroll)
+	body:SetWidth(bodyW)
+	body:SetHeight(SCROLL_CHILD_H)
+	bodyScroll:SetScrollChild(body)
+
+	-- Vertical scrollbar
+	local BACKDROP_SCROLLBAR = {
+		bgFile   = "Interface\\Buttons\\UI-SliderBar-Background",
+		edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
+		tile = true, tileSize = 8, edgeSize = 8,
+		insets = { left = 3, right = 3, top = 6, bottom = 6 },
+	}
+	local VIEWPORT_H = FRAME_HEIGHT - TITLE_HEIGHT - 4 - 8
+	local MAX_SCROLL = SCROLL_CHILD_H - VIEWPORT_H
+
+	local sb = CreateFrame("Slider", "AmptieRaidToolsScrollBar", f)
+	sb:SetOrientation("VERTICAL")
+	sb:SetPoint("TOPRIGHT",    f, "TOPRIGHT",    -8, -(TITLE_HEIGHT + 4))
+	sb:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
+	sb:SetWidth(SCROLLBAR_W)
+	sb:SetBackdrop(BACKDROP_SCROLLBAR)
+	sb:SetBackdropColor(0.05, 0.05, 0.07, 0.9)
+	sb:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Vertical")
+	sb:SetMinMaxValues(0, MAX_SCROLL)
+	sb:SetValue(0)
+	sb:SetScript("OnValueChanged", function()
+		bodyScroll:SetVerticalScroll(this:GetValue())
+	end)
+
+	bodyScroll:SetScript("OnMouseWheel", function()
+		local delta  = arg1
+		local newVal = math.max(0, math.min(MAX_SCROLL,
+		                bodyScroll:GetVerticalScroll() - delta * 40))
+		bodyScroll:SetVerticalScroll(newVal)
+		sb:SetValue(newVal)
+	end)
+
+	bodyScrollFrame = bodyScroll
+	bodyScrollBar   = sb
 
 	-- bodyFrame jetzt setzen, damit RegisterComponent funktioniert
 	bodyFrame = body
@@ -274,6 +326,8 @@ local function UpdateMinimapButtonPosition()
 	AmptieRaidToolsMinimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
 end
 
+local _mbDragging = false
+
 local function CreateMinimapButton()
 	if AmptieRaidToolsMinimapButton then
 		UpdateMinimapButtonPosition()
@@ -300,20 +354,18 @@ local function CreateMinimapButton()
 	icon:SetHeight(20)
 	icon:SetPoint("TOPLEFT", mb, "TOPLEFT", 6, -5)
 
-	mb._dragging = false
-
 	mb:SetScript("OnMouseDown", function()
 		if arg1 == "LeftButton" and IsShiftKeyDown() then
-			this._dragging = true
+			_mbDragging = true
 		end
 	end)
 	mb:SetScript("OnMouseUp", function()
 		if arg1 == "LeftButton" then
-			this._dragging = false
+			_mbDragging = false
 		end
 	end)
 	mb:SetScript("OnUpdate", function()
-		if not this._dragging then return end
+		if not _mbDragging then return end
 		local scale = UIParent:GetEffectiveScale()
 		local mx, my = GetCursorPosition()
 		mx = mx / scale
