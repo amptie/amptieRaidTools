@@ -371,7 +371,7 @@ function AmptieRaidTools_InitAutoBuffs(body)
 		tile = true, tileSize = 16, edgeSize = 12,
 		insets = { left = 3, right = 3, top = 3, bottom = 3 },
 	}
-	local ddList = CreateFrame("Frame", "ART_AB_DDList", panel)
+	local ddList = CreateFrame("Frame", "ART_AB_DDList", UIParent)
 	ddList:SetFrameStrata("TOOLTIP")
 	ddList:SetWidth(150)
 	ddList:SetBackdrop(DD_BACKDROP)

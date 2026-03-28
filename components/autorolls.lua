@@ -123,19 +123,19 @@ end)
 -- UI-Komponente
 -- ============================================================
 local AR_ROWS = {
-	{ key = "sand",   label = "Sand (Black Morass)",
+	{ key = "sand",   label = "Black Morass (Sand)",
 	  tooltip = "Hourglass Sand from Black Morass (item 50203).\n|cffaaaaааWhen Wardens of Time Exalted: only None / Pass available.|r" },
-	{ key = "zg",     label = "ZG Bijous / Coins",
+	{ key = "zg",     label = "Zul'Gurub (Coins + Bijous)",
 	  tooltip = "Bijous and Coins from Zul'Gurub." },
-	{ key = "aq",     label = "AQ Tokens",
+	{ key = "aq",     label = "Ahn'Qiraj (Scarabs + Idols)",
 	  tooltip = "Armor Tokens from Ahn'Qiraj." },
-	{ key = "mc",     label = "MC Cores",
+	{ key = "mc",     label = "Molten Core (Fiery/Lava Core)",
 	  tooltip = "Rare crafting materials from Molten Core." },
-	{ key = "naxx",   label = "Naxx Wartorn Scraps",
+	{ key = "naxx",   label = "Naxxramas (Scraps)",
 	  tooltip = "Wartorn Scraps from Naxxramas." },
-	{ key = "kara10", label = "Kara 10 (Arcane Essence)",
+	{ key = "kara10", label = "Lower Karazhan (Arcane Essences)",
 	  tooltip = "Arcane Essence from Karazhan 10-man." },
-	{ key = "kara40", label = "Kara 40",
+	{ key = "kara40", label = "Upper Karazhan (Arcane Essences + Energies)",
 	  tooltip = "Exclusive items from Karazhan 40-man." },
 }
 local AR_OPTS = { "none", "need", "greed", "pass" }

@@ -1390,7 +1390,7 @@ function AmptieRaidTools_InitBuffChecks(body)
     -- Profile scroll list (bottom reserved for 5 rows of buttons = 138px)
     local profSF = CreateFrame("ScrollFrame", nil, panel)
     profSF:SetPoint("TOPLEFT",    activeProfLabel, "BOTTOMLEFT", 0, -4)
-    profSF:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 138)
+    profSF:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -392)
     profSF:SetWidth(LEFT_W)
 
     local profContent = CreateFrame("Frame", nil, profSF)
@@ -1475,27 +1475,27 @@ function AmptieRaidTools_InitBuffChecks(body)
     -- Row 5 (y=112): Zone Bindings
 
     local newProfBtn = MakeBtn(panel, "New", 80, 22)
-    newProfBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 86)
+    newProfBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -444)
 
     local delProfBtn = MakeBtn(panel, "Delete", 80, 22)
     delProfBtn:SetPoint("LEFT", newProfBtn, "RIGHT", 4, 0)
     delProfBtn.label:SetTextColor(1, 0.4, 0.4, 1)
 
     local expBtn = MakeBtn(panel, "Export", 80, 22)
-    expBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 60)
+    expBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -470)
 
     local impBtn = MakeBtn(panel, "Import", 80, 22)
     impBtn:SetPoint("LEFT", expBtn, "RIGHT", 4, 0)
 
     local renameBtn = MakeBtn(panel, "Rename", 164, 22)
-    renameBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 34)
+    renameBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -496)
 
     local fromICBtn = MakeBtn(panel, "From IC Profile", 164, 22)
-    fromICBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 8)
+    fromICBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -522)
     fromICBtn.label:SetTextColor(0.6, 0.85, 1, 1)
 
     local zoneBindBtn = MakeBtn(panel, "Zone Bindings", 164, 22)
-    zoneBindBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 112)
+    zoneBindBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -418)
     zoneBindBtn.label:SetTextColor(0.7, 1, 0.7, 1)
 
     -- Inline new-profile editbox
@@ -1864,7 +1864,7 @@ function AmptieRaidTools_InitBuffChecks(body)
     -- ── Rules panel (right side) ──────────────────────────────────
     local rulesPanel = CreateFrame("Frame", nil, panel)
     rulesPanel:SetPoint("TOPLEFT",     panel, "TOPLEFT", RIGHT_X, PANEL_TOP_Y)
-    rulesPanel:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 8)
+    rulesPanel:SetPoint("BOTTOMRIGHT", panel, "TOPRIGHT", -8, -522)
 
     local rulesHdr = rulesPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     rulesHdr:SetPoint("TOPLEFT", rulesPanel, "TOPLEFT", 0, 0)

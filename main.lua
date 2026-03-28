@@ -10,7 +10,8 @@ local DB = amptieRaidToolsDB
 if DB.point == nil then DB.point = "CENTER" end
 if DB.x == nil then DB.x = 0 end
 if DB.y == nil then DB.y = 0 end
-if DB.minimapAngle == nil then DB.minimapAngle = 90 end
+-- minimapX/minimapY: CENTER offset from UIParent CENTER. nil = place near Minimap on first use.
+if DB.minimapX == nil then DB.minimapX = nil end
 
 local FRAME_WIDTH   = 780
 local FRAME_HEIGHT  = 570
@@ -313,32 +314,21 @@ local function CreateMainFrame()
 end
 
 -- ============================================================
--- Minimap-Button
+-- Minimap-Button  (free-floating, drag anywhere on screen)
 -- ============================================================
-local MINIMAP_RADIUS = 78
-
-local function UpdateMinimapButtonPosition()
-	if not AmptieRaidToolsMinimapButton then return end
-	local angle = (DB.minimapAngle or 90) * 3.14159265358979 / 180
-	local x = MINIMAP_RADIUS * math.cos(angle)
-	local y = MINIMAP_RADIUS * math.sin(angle)
-	AmptieRaidToolsMinimapButton:ClearAllPoints()
-	AmptieRaidToolsMinimapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
-end
-
-local _mbDragging = false
-
 local function CreateMinimapButton()
 	if AmptieRaidToolsMinimapButton then
-		UpdateMinimapButtonPosition()
 		AmptieRaidToolsMinimapButton:Show()
 		return
 	end
-	local mb = CreateFrame("Button", "AmptieRaidToolsMinimapButton", Minimap)
+	local mb = CreateFrame("Button", "AmptieRaidToolsMinimapButton", UIParent)
 	mb:SetWidth(31)
 	mb:SetHeight(31)
 	mb:SetFrameStrata("MEDIUM")
 	mb:SetFrameLevel(8)
+	mb:SetMovable(true)
+	mb:SetClampedToScreen(true)
+	mb:RegisterForDrag("LeftButton")
 	mb:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight", "ADD")
 
 	local border = mb:CreateTexture(nil, "OVERLAY")
@@ -354,42 +344,38 @@ local function CreateMinimapButton()
 	icon:SetHeight(20)
 	icon:SetPoint("TOPLEFT", mb, "TOPLEFT", 6, -5)
 
-	mb:SetScript("OnMouseDown", function()
-		if arg1 == "LeftButton" and IsShiftKeyDown() then
-			_mbDragging = true
-		end
-	end)
-	mb:SetScript("OnMouseUp", function()
-		if arg1 == "LeftButton" then
-			_mbDragging = false
-		end
-	end)
-	mb:SetScript("OnUpdate", function()
-		if not _mbDragging then return end
-		local scale = UIParent:GetEffectiveScale()
-		local mx, my = GetCursorPosition()
-		mx = mx / scale
-		my = my / scale
+	-- Position: restore saved CENTER-from-UIParentCENTER, or default near Minimap.
+	if DB.minimapX and DB.minimapY then
+		mb:SetPoint("CENTER", UIParent, "CENTER", DB.minimapX, DB.minimapY)
+	else
+		-- First use: place near the Minimap (top-right area).
 		local mmx, mmy = Minimap:GetCenter()
-		local dx = mx - mmx
-		local dy = my - mmy
-		local angle = math.atan2(dy, dx) * 180 / 3.14159265358979
-		DB.minimapAngle = angle
-		UpdateMinimapButtonPosition()
+		local ucx, ucy = UIParent:GetCenter()
+		DB.minimapX = mmx - ucx
+		DB.minimapY = mmy - ucy + 80
+		mb:SetPoint("CENTER", UIParent, "CENTER", DB.minimapX, DB.minimapY)
+	end
+
+	mb:SetScript("OnDragStart", function() this:StartMoving() end)
+	mb:SetScript("OnDragStop", function()
+		this:StopMovingOrSizing()
+		local cx, cy = this:GetCenter()
+		local ucx, ucy = UIParent:GetCenter()
+		DB.minimapX = cx - ucx
+		DB.minimapY = cy - ucy
 	end)
 	mb:SetScript("OnClick", function()
-		if arg1 == "LeftButton" and not IsShiftKeyDown() then
+		if arg1 == "LeftButton" then
 			MainFrame_Toggle()
 		end
 	end)
 	mb:SetScript("OnEnter", function()
 		GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-		GameTooltip:SetText("amptieRaidTools\nLeft-click: Open/Close\nShift+drag: Move")
+		GameTooltip:SetText("amptieRaidTools\nLeft-click: Open/Close\nDrag: Move")
 		GameTooltip:Show()
 	end)
 	mb:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-	UpdateMinimapButtonPosition()
 	mb:Show()
 end
 

@@ -717,7 +717,7 @@ function AmptieRaidTools_InitItemChecks(body)
     -- Profile scroll area
     local profSF = CreateFrame("ScrollFrame", nil, panel)
     profSF:SetPoint("TOPLEFT",     activeProfLabel, "BOTTOMLEFT", 0, -4)
-    profSF:SetPoint("BOTTOMLEFT",  panel, "BOTTOMLEFT", 8, 86)
+    profSF:SetPoint("BOTTOMLEFT",  panel, "TOPLEFT", 8, -444)
     profSF:SetWidth(LEFT_W)
 
     local profContent = CreateFrame("Frame", nil, profSF)
@@ -811,18 +811,18 @@ function AmptieRaidTools_InitItemChecks(body)
     -- New / Delete / Export / Import buttons at bottom of left panel
     -- Row 1 (bottom): Export · Import
     local expBtn = MakeBtn(panel, "Export", 80, 22)
-    expBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 8)
+    expBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -522)
 
     local impBtn = MakeBtn(panel, "Import", 80, 22)
     impBtn:SetPoint("LEFT", expBtn, "RIGHT", 4, 0)
 
     -- Row 2: Rename (full width)
     local renameBtn = MakeBtn(panel, "Rename", 164, 22)
-    renameBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 34)
+    renameBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -496)
 
     -- Row 3: New · Delete
     local newProfBtn = MakeBtn(panel, "+ New", 80, 22)
-    newProfBtn:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 60)
+    newProfBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -470)
 
     local delProfBtn = MakeBtn(panel, "Delete", 80, 22)
     delProfBtn:SetPoint("LEFT", newProfBtn, "RIGHT", 4, 0)
@@ -1014,7 +1014,7 @@ function AmptieRaidTools_InitItemChecks(body)
     -- ── Rules panel (right side) ─────────────────────────────────
     local rulesPanel = CreateFrame("Frame", nil, panel)
     rulesPanel:SetPoint("TOPLEFT",    panel, "TOPLEFT", RIGHT_X, PANEL_TOP_Y)
-    rulesPanel:SetPoint("BOTTOMRIGHT",panel, "BOTTOMRIGHT", -8, 8)
+    rulesPanel:SetPoint("BOTTOMRIGHT",panel, "TOPRIGHT", -8, -522)
 
     local rulesHdr = rulesPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     rulesHdr:SetPoint("TOPLEFT", rulesPanel, "TOPLEFT", 0, 0)
@@ -1157,7 +1157,7 @@ function AmptieRaidTools_InitItemChecks(body)
     -- ── Rule editor overlay ──────────────────────────────────────
     editorPanel = CreateFrame("Frame", nil, panel)
     editorPanel:SetPoint("TOPLEFT",    panel, "TOPLEFT", RIGHT_X, PANEL_TOP_Y)
-    editorPanel:SetPoint("BOTTOMRIGHT",panel, "BOTTOMRIGHT", -8, 8)
+    editorPanel:SetPoint("BOTTOMRIGHT",panel, "TOPRIGHT", -8, -522)
     editorPanel:Hide()
 
     local edHdr = editorPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

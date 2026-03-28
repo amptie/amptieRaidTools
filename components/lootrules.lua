@@ -2088,7 +2088,7 @@ local function CreateLRLeftPanel(panel)
 
     local profSF = CreateFrame("ScrollFrame",nil,panel)
     profSF:SetPoint("TOPLEFT",   panel,"TOPLEFT",   8,-52)
-    profSF:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,166)
+    profSF:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-364)
     profSF:SetWidth(LEFT_W)
 
     local profContent = CreateFrame("Frame",nil,profSF)
@@ -2180,7 +2180,7 @@ local function CreateLRLeftPanel(panel)
 
     -- New button + floating editbox
     local newBtn = MakeBtn(panel,"New",HALF_BTN,22)
-    newBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,86)
+    newBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-444)
     newBtn.label:SetTextColor(0.5,1,0.5,1)
 
     local newProfEdit = CreateFrame("EditBox",nil,UIParent)
@@ -2236,7 +2236,7 @@ local function CreateLRLeftPanel(panel)
 
     -- Rename button + floating editbox
     local renameBtn = MakeBtn(panel,"Rename",LEFT_W-2,22)
-    renameBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,34)
+    renameBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-496)
 
     local renameProfEdit = CreateFrame("EditBox",nil,UIParent)
     renameProfEdit:SetWidth(LEFT_W-2); renameProfEdit:SetHeight(22)
@@ -2275,19 +2275,19 @@ local function CreateLRLeftPanel(panel)
 
     -- Simulate Loot
     local simBtn = MakeBtn(panel,"Simulate Loot",LEFT_W-2,22)
-    simBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,8)
+    simBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-522)
     simBtn.label:SetTextColor(0.6,0.8,1,1)
     simBtn:SetScript("OnClick",function() SimulateLoot() end)
 
     -- Export / Import
     local expBtn = MakeBtn(panel,"Export",HALF_BTN,22)
-    expBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,60)
+    expBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-470)
     local impBtn = MakeBtn(panel,"Import",HALF_BTN,22)
     impBtn:SetPoint("LEFT",expBtn,"RIGHT",6,0)
 
     -- Zone Bindings button + modal
     local zoneBtn = MakeBtn(panel,"Zone Bindings",LEFT_W-2,22)
-    zoneBtn:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",8,112)
+    zoneBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-418)
     zoneBtn.label:SetTextColor(0.7,1,0.7,1)
 
     local zm = CreateFrame("Frame",nil,UIParent)
@@ -2495,7 +2495,7 @@ local function CreateLRRightPanel(panel)
     local RX   = 186
     local rf   = CreateFrame("Frame",nil,panel)
     rf:SetPoint("TOPLEFT",    panel,"TOPLEFT",    RX,-52)
-    rf:SetPoint("BOTTOMRIGHT",panel,"BOTTOMRIGHT",-8,  8)
+    rf:SetPoint("BOTTOMRIGHT",panel,"TOPRIGHT",-8,-522)
     lrRightFrame = rf
 
     -- Profile name + divider + mode buttons — always visible
@@ -3087,7 +3087,7 @@ function AmptieRaidTools_InitLootRules(body)
     local vdiv = panel:CreateTexture(nil,"ARTWORK")
     vdiv:SetWidth(1)
     vdiv:SetPoint("TOPLEFT",   panel,"TOPLEFT",   184,-52)
-    vdiv:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",184,  8)
+    vdiv:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",184,-522)
     vdiv:SetTexture(0.25,0.25,0.28,0.8)
 
     GetLRDB()

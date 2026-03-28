@@ -521,7 +521,7 @@ function AmptieRaidTools_InitRaidSetups(body)
 	-- Clip frame: children outside its bounds are not rendered
 	local clipFrame = CreateFrame("Frame", "ART_RS_Clip", panel)
 	clipFrame:SetPoint("TOPLEFT",     topSep, "BOTTOMLEFT",   0,  -4)
-	clipFrame:SetPoint("BOTTOMRIGHT", panel,  "BOTTOMRIGHT", -22,  4)
+	clipFrame:SetPoint("BOTTOMRIGHT", panel,  "TOPRIGHT", -22, -526)
 
 
 	-- Content frame: taller than clip, scrolled by moving its TOPLEFT

@@ -55,6 +55,15 @@ local function GetBBDB()
     if not amptieRaidToolsDB then return nil end
     if not amptieRaidToolsDB.buffBars then amptieRaidToolsDB.buffBars = {} end
     local db = amptieRaidToolsDB.buffBars
+    -- Version migration: resets saved positions when the anchor math changed.
+    -- Bump bbBarsVersion whenever OnDragStop math or anchor reference changes.
+    -- v3: OnDragStop formula corrected (GetRight()-UIParent:GetRight() instead of -GetWidth())
+    if db.bbBarsVersion ~= 3 then
+        db.bbBarsVersion  = 3
+        db.buffBarX       = 0;   db.buffBarY   = -160
+        db.debuffBarX     = 0;   db.debuffBarY = -200
+        db.weaponBarX     = 0;   db.weaponBarY = -240
+    end
     -- Consolidated
     if db.consolidatedEnabled == nil then db.consolidatedEnabled = false end
     if db.consolidatedLocked  == nil then db.consolidatedLocked  = true  end
@@ -71,7 +80,6 @@ local function GetBBDB()
     if db.buffBarEnabled        == nil then db.buffBarEnabled        = false end
     if db.buffBarLocked         == nil then db.buffBarLocked         = true  end
     if db.buffBarNumPerRow      == nil then db.buffBarNumPerRow      = 16    end
-    if db.buffBarPoint          == nil then db.buffBarPoint          = "TOPRIGHT" end
     if db.buffBarX              == nil then db.buffBarX              = 0     end
     if db.buffBarY              == nil then db.buffBarY              = -160  end
     if db.buffIconSz            == nil then db.buffIconSz            = BB_ICON_DEFAULT end
@@ -80,14 +88,12 @@ local function GetBBDB()
     if db.debuffBarEnabled    == nil then db.debuffBarEnabled    = false end
     if db.debuffBarLocked     == nil then db.debuffBarLocked     = true  end
     if db.debuffBarNumPerRow  == nil then db.debuffBarNumPerRow  = 8     end
-    if db.debuffBarPoint      == nil then db.debuffBarPoint      = "TOPRIGHT" end
     if db.debuffBarX          == nil then db.debuffBarX          = 0     end
     if db.debuffBarY          == nil then db.debuffBarY          = -200  end
     if db.debuffIconSz        == nil then db.debuffIconSz        = BB_ICON_DEFAULT end
     -- Weapon bar
     if db.weaponBarEnabled == nil then db.weaponBarEnabled = false end
     if db.weaponBarLocked  == nil then db.weaponBarLocked  = true  end
-    if db.weaponBarPoint   == nil then db.weaponBarPoint   = "TOPRIGHT" end
     if db.weaponBarX       == nil then db.weaponBarX       = 0     end
     if db.weaponBarY       == nil then db.weaponBarY       = -240  end
     if db.weaponIconSz     == nil then db.weaponIconSz     = BB_ICON_DEFAULT end
@@ -184,8 +190,7 @@ local function BBMakeIconBtn(parent, slot0)
     btn.count = count
 
     local timer = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    timer:SetPoint("TOPLEFT",  btn, "BOTTOMLEFT",  0, BB_TIMER_H)
-    timer:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, BB_TIMER_H)
+    timer:SetPoint("TOP", btn, "BOTTOM", 0, BB_TIMER_H)
     timer:SetJustifyH("CENTER")
     timer:SetTextColor(1, 1, 1, 1)
     btn.timer = timer
@@ -235,7 +240,6 @@ local function BBLayout(buttons, numPerRow, visible, iconSz, displayCount, rtl)
     local stepV  = iconSz + BB_TIMER_H + BB_PAD
     local n      = getn(buttons)
     local parent = buttons[1]:GetParent()
-    -- dispCols needed before the loop for RTL x-calculation
     local dispCols = displayCount > 0 and mmin(displayCount, numPerRow) or 0
     for i = 1, n do
         local btn = buttons[i]
@@ -244,15 +248,19 @@ local function BBLayout(buttons, numPerRow, visible, iconSz, displayCount, rtl)
             local rowIdx = floor((i - 1) / numPerRow)
             local posIdx = math.mod(i - 1, numPerRow)  -- 0 = first placed
             local x, y
+            btn:ClearAllPoints()
             if rtl then
-                -- Position 0 = rightmost column; builds left
-                x = (dispCols - 1 - posIdx) * stepH + BB_PAD
+                -- Anchor each icon to the frame's TOPRIGHT corner.
+                -- posIdx 0 = rightmost icon, always at frame.TOPRIGHT - BB_PAD.
+                -- Frame grows leftward; icon 1 screen position never shifts.
+                x = -(posIdx * stepH + BB_PAD)
+                y = -(rowIdx * stepV + BB_PAD)
+                btn:SetPoint("TOPRIGHT", parent, "TOPRIGHT", x, y)
             else
                 x = posIdx * stepH + BB_PAD
+                y = -(rowIdx * stepV + BB_PAD)
+                btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
             end
-            y = -(rowIdx * stepV + BB_PAD)
-            btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
             if i <= visible then
                 btn.icon:SetAlpha(1)
                 btn:EnableMouse(true)
@@ -271,8 +279,10 @@ local function BBLayout(buttons, numPerRow, visible, iconSz, displayCount, rtl)
     end
     if displayCount == 0 then
         parent:SetWidth(1); parent:SetHeight(1)
+        parent:SetAlpha(0)  -- suppress backdrop cross artifact on empty 1x1 frame
         return 0, 0
     end
+    parent:SetAlpha(1)
     local dispRows = mceil(displayCount / numPerRow)
     local fw = dispCols * stepH + BB_PAD * 2
     local fh = dispRows * (iconSz + BB_PAD) + BB_PAD * 2
@@ -560,7 +570,7 @@ local function BBCreateConsolidatedFrame()
     local icon = bbConFrame:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT",     bbConFrame, "TOPLEFT",     BB_PAD, -BB_PAD)
     icon:SetPoint("BOTTOMRIGHT", bbConFrame, "BOTTOMRIGHT", -BB_PAD, BB_PAD)
-    icon:SetTexture("Interface\\Icons\\Spell_Holy_PowerWordFortitude")
+    icon:SetTexture("Interface\\Icons\\inv_enchant_dustsoul")
     icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     bbConFrame.mainIcon = icon
 
@@ -629,9 +639,7 @@ local function BBCreateBuffBar()
     bbBuffFrame:SetBackdrop(BB_BD)
     bbBuffFrame:SetBackdropColor(0, 0, 0, 0.7)
     bbBuffFrame:SetBackdropBorderColor(0.3, 0.3, 0.35, 0.8)
-    local buffPt = (db and db.buffBarPoint) or "TOPRIGHT"
-    bbBuffFrame:SetPoint(buffPt, UIParent, buffPt,
-        db and db.buffBarX or 0, db and db.buffBarY or -160)
+    bbBuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db and db.buffBarX or 0, db and db.buffBarY or -160)
     bbBuffFrame:RegisterForDrag("LeftButton")
     bbBuffFrame:SetScript("OnDragStart", function()
         local d = GetBBDB()
@@ -645,10 +653,8 @@ local function BBCreateBuffBar()
         this:StopMovingOrSizing()
         local d = GetBBDB()
         if d and not (d.consolidatedEnabled and bbConFrame and bbConFrame:IsShown()) then
-            local p, _, _, x, y = this:GetPoint()
-            d.buffBarPoint = p
-            d.buffBarX = x
-            d.buffBarY = y
+            d.buffBarX = this:GetRight() - UIParent:GetRight()
+            d.buffBarY = this:GetTop()   - UIParent:GetTop()
         end
     end)
     bbBuffFrame:Hide()
@@ -695,8 +701,17 @@ local function BBUpdateBuffBar()
             btn.timer:SetTextColor(1, 1, 1, 1)
         end
     end
-    -- Unlocked: show all possible slots as preview; locked+empty: collapse frame
-    local displayCount = (db and not db.buffBarLocked) and BB_MAX_BUFFS or visible
+    local buffLocked = db and db.buffBarLocked
+    if buffLocked and visible == 0 then
+        for i = 1, BB_MAX_BUFFS do bbBuffBtns[i]:Hide() end
+        bbBuffFrame:SetAlpha(0)
+        if bbConFrame then
+            bbConFrame:SetWidth(iconSz + BB_PAD * 2)
+            bbConFrame:SetHeight(iconSz + BB_PAD * 2)
+        end
+        return
+    end
+    local displayCount = (not buffLocked) and BB_MAX_BUFFS or visible
     BBLayout(bbBuffBtns, perRow, visible, iconSz, displayCount, true)
     -- Resize consolidated to match icon size
     if bbConFrame then
@@ -750,17 +765,19 @@ local bbDebuffBtns  = {}
 
 local function BBCreateDebuffBar()
     local db = GetBBDB()
+    -- Container: NO backdrop on the main frame. A child frame provides the backdrop
+    -- and is sized only to cover visible slots. The container itself is NEVER resized
+    -- based on content — its size is set by BBLayout with BB_MAX_DEBUFFS and only
+    -- changes when settings (iconSz / perRow) change. This keeps the TOPRIGHT anchor
+    -- stable: WoW 1.12 drifts the TOPRIGHT when a frame shrinks (TOPLEFT-based
+    -- internally). With a fixed container size, no shrink ever happens from content.
     bbDebuffFrame = CreateFrame("Frame", "ART_BB_DebuffFrame", UIParent)
     bbDebuffFrame:SetFrameStrata("MEDIUM")
     bbDebuffFrame:SetMovable(true)
     bbDebuffFrame:SetClampedToScreen(true)
-    bbDebuffFrame:EnableMouse(true)
-    bbDebuffFrame:SetBackdrop(BB_BD)
-    bbDebuffFrame:SetBackdropColor(0, 0, 0, 0.7)
-    bbDebuffFrame:SetBackdropBorderColor(0.55, 0.1, 0.1, 0.8)
-    local debuffPt = (db and db.debuffBarPoint) or "TOPRIGHT"
-    bbDebuffFrame:SetPoint(debuffPt, UIParent, debuffPt,
-        db and db.debuffBarX or 0, db and db.debuffBarY or -200)
+    bbDebuffFrame:EnableMouse(false)  -- enabled only when content is visible (avoids
+                                      -- blocking buff bar mouse events when invisible)
+    bbDebuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db and db.debuffBarX or 0, db and db.debuffBarY or -200)
     bbDebuffFrame:RegisterForDrag("LeftButton")
     bbDebuffFrame:SetScript("OnDragStart", function()
         local d = GetBBDB()
@@ -770,12 +787,20 @@ local function BBCreateDebuffBar()
         this:StopMovingOrSizing()
         local d = GetBBDB()
         if d then
-            local p, _, _, x, y = this:GetPoint()
-            d.debuffBarPoint = p
-            d.debuffBarX = x
-            d.debuffBarY = y
+            -- Correct formula for TOPRIGHT→UIParent-TOPRIGHT anchor:
+            -- x = GetRight() - UIParent:GetRight()  (= GetRight() - GetWidth()/2)
+            d.debuffBarX = this:GetRight() - UIParent:GetRight()
+            d.debuffBarY = this:GetTop()   - UIParent:GetTop()
         end
     end)
+    -- Backdrop child: dynamically sized to cover only visible slots.
+    -- Its SetWidth/SetHeight never affects the container's anchor.
+    local dBD = CreateFrame("Frame", nil, bbDebuffFrame)
+    dBD:SetBackdrop(BB_BD)
+    dBD:SetBackdropColor(0, 0, 0, 0.7)
+    dBD:SetBackdropBorderColor(0.55, 0.1, 0.1, 0.8)
+    dBD:Hide()
+    bbDebuffFrame.backdropChild = dBD
     bbDebuffFrame:Hide()
     for i = 1, BB_MAX_DEBUFFS do
         bbDebuffBtns[i] = BBMakeIconBtn(bbDebuffFrame, i - 1)
@@ -784,15 +809,23 @@ end
 
 local function BBUpdateDebuffBar()
     if not bbDebuffFrame or not bbDebuffFrame:IsShown() then return end
-    local db      = GetBBDB()
-    local iconSz  = (db and db.debuffIconSz) or BB_ICON_DEFAULT
-    local perRow  = (db and db.debuffBarNumPerRow) or 8
+    local db     = GetBBDB()
+    local iconSz = (db and db.debuffIconSz) or BB_ICON_DEFAULT
+    local perRow = (db and db.debuffBarNumPerRow) or 8
+    local locked = db and db.debuffBarLocked
+    local stepH  = iconSz + BB_PAD
+
     local visible = 0
     for slot = 1, BB_MAX_DEBUFFS do
-        local tex, apps, dtype, duration, timeLeft = UnitDebuff("player", slot)
+        local tex, apps, dtype = UnitDebuff("player", slot)
         if not tex then break end
+        -- GetPlayerBuff(slot-1, "HARMFUL") returns buffIndex; GetPlayerBuffTimeLeft needs it.
+        -- UnitDebuff returns no duration/timeLeft in WoW 1.12 — only tex/stacks/debuffType.
+        local buffIndex = GetPlayerBuff(slot - 1, "HARMFUL")
+        local timeLeft  = (buffIndex >= 0) and GetPlayerBuffTimeLeft(buffIndex) or nil
         visible = visible + 1
         local btn = bbDebuffBtns[visible]
+        btn.buffIndex = buffIndex
         btn.icon:SetTexture(tex)
         local col = (dtype and BB_DEBUFF_COL[dtype]) or BB_DEBUFF_COL_NONE
         btn.border:SetVertexColor(col.r, col.g, col.b, 1)
@@ -801,15 +834,52 @@ local function BBUpdateDebuffBar()
         else btn.count:Hide() end
         if timeLeft and timeLeft > 0 then
             btn.timer:SetText(BBFmtTime(timeLeft))
-            btn.timer:SetTextColor(timeLeft < 30 and 1 or 1,
-                                   timeLeft < 30 and 0.4 or 1,
-                                   timeLeft < 30 and 0 or 1, 1)
+            -- Yellow once the timer drops to seconds-only display (< 60s)
+            if timeLeft < 60 then
+                btn.timer:SetTextColor(1, 1, 0, 1)
+            else
+                btn.timer:SetTextColor(1, 1, 1, 1)
+            end
         else
             btn.timer:SetText("")
         end
     end
-    local displayCount = (db and not db.debuffBarLocked) and BB_MAX_DEBUFFS or visible
-    BBLayout(bbDebuffBtns, perRow, visible, iconSz, displayCount, true)
+
+    -- ALWAYS call BBLayout with BB_MAX_DEBUFFS so the container frame is always the
+    -- same width for given settings. This prevents TOPRIGHT anchor drift: WoW 1.12
+    -- keeps the LEFT edge fixed on SetWidth(), so shrinking the frame shifts the right
+    -- edge left. By never shrinking (always full-slot width), the anchor stays stable.
+    BBLayout(bbDebuffBtns, perRow, visible, iconSz, BB_MAX_DEBUFFS, true)
+    -- In locked mode: hide preview slots — only real debuffs are shown.
+    if locked then
+        for i = visible + 1, BB_MAX_DEBUFFS do bbDebuffBtns[i]:Hide() end
+    end
+
+    local dBD = bbDebuffFrame.backdropChild
+    if locked and visible == 0 then
+        -- Nothing to show: invisible + non-interactive (avoid blocking buff bar mouse).
+        bbDebuffFrame:SetAlpha(0)
+        bbDebuffFrame:EnableMouse(false)
+        if dBD then dBD:Hide() end
+        return
+    end
+
+    -- Size backdrop child to cover only the displayed slots.
+    -- The child's resize never touches the container → no anchor drift.
+    bbDebuffFrame:SetAlpha(1)
+    bbDebuffFrame:EnableMouse(true)
+    if dBD then
+        local dispSlots = locked and visible or BB_MAX_DEBUFFS
+        local dispCols  = mmin(dispSlots, perRow)
+        local dispRows  = mceil(dispSlots / perRow)
+        local bdW = dispCols * stepH + BB_PAD
+        local bdH = dispRows * (iconSz + BB_PAD) + BB_PAD * 2
+        dBD:ClearAllPoints()
+        dBD:SetPoint("TOPRIGHT", bbDebuffFrame, "TOPRIGHT", -BB_PAD, 0)
+        dBD:SetWidth(bdW)
+        dBD:SetHeight(bdH)
+        dBD:Show()
+    end
 end
 
 -- ============================================================
@@ -827,9 +897,7 @@ local function BBCreateWeaponBar()
     bbWeaponFrame:EnableMouse(true)
     -- Frame has no visible backdrop; a child frame provides the sized backdrop
     bbWeaponFrame:SetBackdrop(nil)
-    local wepPt = (db and db.weaponBarPoint) or "TOPRIGHT"
-    bbWeaponFrame:SetPoint(wepPt, UIParent, wepPt,
-        db and db.weaponBarX or 0, db and db.weaponBarY or -240)
+    bbWeaponFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db and db.weaponBarX or 0, db and db.weaponBarY or -240)
     bbWeaponFrame:RegisterForDrag("LeftButton")
     bbWeaponFrame:SetScript("OnDragStart", function()
         local d = GetBBDB()
@@ -839,10 +907,8 @@ local function BBCreateWeaponBar()
         this:StopMovingOrSizing()
         local d = GetBBDB()
         if d then
-            local p, _, _, x, y = this:GetPoint()
-            d.weaponBarPoint = p
-            d.weaponBarX = x
-            d.weaponBarY = y
+            d.weaponBarX = this:GetRight() - UIParent:GetRight()
+            d.weaponBarY = this:GetTop()   - UIParent:GetTop()
         end
     end)
     -- Backdrop child: created before buttons so it renders behind them
@@ -852,6 +918,10 @@ local function BBCreateWeaponBar()
     wBD:SetBackdropBorderColor(0.3, 0.3, 0.35, 0.8)
     wBD:Hide()
     bbWeaponFrame.backdropChild = wBD
+    -- Initialize with a valid non-zero size (same reason as debuff bar).
+    local initSz = (db and db.weaponIconSz) or BB_ICON_DEFAULT
+    bbWeaponFrame:SetWidth(BB_MAX_WEAPONS * (initSz + BB_PAD) + BB_PAD * 2)
+    bbWeaponFrame:SetHeight(initSz + BB_TIMER_H + BB_PAD * 2 + BB_PAD)
     bbWeaponFrame:Hide()
     for i = 1, BB_MAX_WEAPONS do
         local btn = BBMakeIconBtn(bbWeaponFrame, i - 1)
@@ -904,11 +974,11 @@ local function BBUpdateWeaponBar()
         bbWeaponBtns[i].hasEnchant = false
     end
 
-    -- Locked + no enchants: collapse frame so bar disappears
+    -- Locked + no enchants: hide buttons and backdrop but keep the frame at its
+    -- last valid size so the TOPRIGHT anchor does not drift when enchants return.
     if locked and visible == 0 then
         for i = 1, BB_MAX_WEAPONS do bbWeaponBtns[i]:Hide() end
         if bbWeaponFrame.backdropChild then bbWeaponFrame.backdropChild:Hide() end
-        bbWeaponFrame:SetWidth(1); bbWeaponFrame:SetHeight(1)
         return
     end
 
@@ -990,6 +1060,55 @@ bbEventFrame:SetScript("OnEvent", function()
 end)
 
 -- ============================================================
+-- ── Blizzard frame suppression (VCB pattern)
+-- ============================================================
+local function BBSuppressBlizzBuffFrame()
+    -- Hide BuffFrame (contains both buffs and debuffs in WoW 1.12)
+    if BuffFrame then
+        BuffFrame:Hide()
+        for i = 0, 23 do
+            local btn = getglobal("BuffButton" .. i)
+            if btn then btn:UnregisterEvent("PLAYER_AURAS_CHANGED") end
+        end
+    end
+end
+
+local function BBRestoreBlizzBuffFrame()
+    local db = GetBBDB()
+    -- Only restore if neither buff nor debuff bar is active
+    if db and (db.buffBarEnabled or db.debuffBarEnabled) then return end
+    if BuffFrame then
+        for i = 0, 23 do
+            local btn = getglobal("BuffButton" .. i)
+            if btn then btn:RegisterEvent("PLAYER_AURAS_CHANGED") end
+        end
+        BuffFrame:Show()
+        if BuffFrame_UpdateAllBuffs then BuffFrame_UpdateAllBuffs() end
+    end
+end
+
+local function BBSuppressBlizzWeaponFrame()
+    if TemporaryEnchantFrame then
+        TemporaryEnchantFrame:Hide()
+        for i = 1, 2 do
+            local btn = getglobal("TempEnchant" .. i)
+            if btn then btn:UnregisterEvent("PLAYER_AURAS_CHANGED") end
+        end
+    end
+end
+
+local function BBRestoreBlizzWeaponFrame()
+    if TemporaryEnchantFrame then
+        for i = 1, 2 do
+            local btn = getglobal("TempEnchant" .. i)
+            if btn then btn:RegisterEvent("PLAYER_AURAS_CHANGED") end
+        end
+        TemporaryEnchantFrame:Show()
+        if TemporaryEnchantFrame_Update then TemporaryEnchantFrame_Update() end
+    end
+end
+
+-- ============================================================
 -- ── Show / hide helpers
 -- ============================================================
 local function BBShowConsolidated(show)
@@ -1013,10 +1132,10 @@ local function BBShowBuffBar(show)
     local db = GetBBDB(); if not db then return end
     db.buffBarEnabled = show
     if show then
+        BBSuppressBlizzBuffFrame()
         if not bbBuffFrame then BBCreateBuffBar() end
         bbBuffFrame:ClearAllPoints()
-        local buffPt = db.buffBarPoint or "TOPRIGHT"
-        bbBuffFrame:SetPoint(buffPt, UIParent, buffPt, db.buffBarX, db.buffBarY)
+        bbBuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db.buffBarX, db.buffBarY)
         BBUpdateBuffBar()
         bbBuffFrame:Show()
         if db.consolidatedEnabled and bbConFrame then BBUpdateConAnchor() end
@@ -1025,6 +1144,7 @@ local function BBShowBuffBar(show)
         if db.consolidatedEnabled and bbConFrame and bbConFrame:IsShown() then
             BBUpdateConAnchor()
         end
+        BBRestoreBlizzBuffFrame()
     end
     BBCheckUpdater()
 end
@@ -1033,14 +1153,15 @@ local function BBShowDebuffBar(show)
     local db = GetBBDB(); if not db then return end
     db.debuffBarEnabled = show
     if show then
+        BBSuppressBlizzBuffFrame()
         if not bbDebuffFrame then BBCreateDebuffBar() end
         bbDebuffFrame:ClearAllPoints()
-        local debuffPt = db.debuffBarPoint or "TOPRIGHT"
-        bbDebuffFrame:SetPoint(debuffPt, UIParent, debuffPt, db.debuffBarX, db.debuffBarY)
-        BBUpdateDebuffBar()
+        bbDebuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db.debuffBarX, db.debuffBarY)
         bbDebuffFrame:Show()
+        BBUpdateDebuffBar()  -- runs immediately (frame is now shown)
     elseif bbDebuffFrame then
         bbDebuffFrame:Hide()
+        BBRestoreBlizzBuffFrame()
     end
     BBCheckUpdater()
 end
@@ -1049,14 +1170,15 @@ local function BBShowWeaponBar(show)
     local db = GetBBDB(); if not db then return end
     db.weaponBarEnabled = show
     if show then
+        BBSuppressBlizzWeaponFrame()
         if not bbWeaponFrame then BBCreateWeaponBar() end
         bbWeaponFrame:ClearAllPoints()
-        local wepPt = db.weaponBarPoint or "TOPRIGHT"
-        bbWeaponFrame:SetPoint(wepPt, UIParent, wepPt, db.weaponBarX, db.weaponBarY)
+        bbWeaponFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db.weaponBarX, db.weaponBarY)
         BBUpdateWeaponBar()
         bbWeaponFrame:Show()
     elseif bbWeaponFrame then
         bbWeaponFrame:Hide()
+        BBRestoreBlizzWeaponFrame()
     end
     BBCheckUpdater()
 end
@@ -1300,20 +1422,23 @@ function ART_BB_BuildSettingsSection(panel, anchor)
     end
 
     local div = MakeDivider(anchor, -10)
-    local hdr = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hdr:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -6)
-    hdr:SetText("Buff Bars & Consolidated Buffs")
-    hdr:SetTextColor(0.8, 0.8, 0.85, 1)
+    local hdr = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", div, "BOTTOMLEFT", 0, -8)
+    hdr:SetText("Consolidated Buffs")
+    hdr:SetTextColor(1, 0.82, 0, 1)
 
     local db = GetBBDB()
 
     -- Row factory: each row is a full-width frame child of panel
     local lastAnchor = hdr
+    local firstRow = true
     local function NextRow(h)
         h = h or ROW_H
         local f = CreateFrame("Frame", nil, panel)
         f:SetHeight(h)
-        f:SetPoint("TOPLEFT",  lastAnchor, "BOTTOMLEFT",  0,   -4)
+        local gap = firstRow and -8 or -4
+        firstRow = false
+        f:SetPoint("TOPLEFT",  lastAnchor, "BOTTOMLEFT",  0,  gap)
         f:SetPoint("TOPRIGHT", panel,      "TOPRIGHT",   -12,   0)
         lastAnchor = f
         return f
@@ -1325,7 +1450,12 @@ function ART_BB_BuildSettingsSection(panel, anchor)
     cbCon:SetPoint("LEFT", rowCon, "LEFT", COL_CB, 0)
     cbCon:SetChecked(db and db.consolidatedEnabled)
     cbCon.userOnClick = function()
-        BBShowConsolidated(cbCon:GetChecked() and true or false)
+        local enabled = cbCon:GetChecked() and true or false
+        -- Enabling consolidated automatically hides those buffs from the bar (and vice versa)
+        local d = GetBBDB()
+        if d then d.hideConsolidatedInBar = enabled end
+        BBShowConsolidated(enabled)
+        if bbBuffFrame and bbBuffFrame:IsShown() then BBUpdateBuffBar() end
     end
 
     -- Combined lock: controls both buff bar and consolidated (they move together)
@@ -1361,11 +1491,16 @@ function ART_BB_BuildSettingsSection(panel, anchor)
     resetConBtn:SetScript("OnClick", function()
         local d = GetBBDB(); if not d then return end
         d.consolidatedPoint = "CENTER"; d.consolidatedX = 0; d.consolidatedY = 220
-        d.buffBarPoint      = "TOPRIGHT"; d.buffBarX = 0; d.buffBarY = -160
+        d.buffBarX = 0; d.buffBarY = -160
+        if bbBuffFrame and bbBuffFrame:IsShown() then
+            bbBuffFrame:ClearAllPoints()
+            bbBuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, -160)
+        end
         if bbConFrame and bbConFrame:IsShown() then BBUpdateConAnchor() end
     end)
 
     -- ── Buff Bar ──────────────────────────────────────────────
+    NextRow(6)  -- spacer
     local rowBuff = NextRow(ROW_H)
     local cbBuff = ART_CreateCheckbox(rowBuff, "Buff Bar")
     cbBuff:SetPoint("LEFT", rowBuff, "LEFT", COL_CB, 0)
@@ -1375,17 +1510,6 @@ function ART_BB_BuildSettingsSection(panel, anchor)
     end
 
     -- No separate lock for buff bar — it shares the combined lock above
-
-    -- Hide consolidated in bar sub-option
-    local rowHideCon = NextRow(SUB_H)
-    local cbHideCon = ART_CreateCheckbox(rowHideCon, "Hide consolidated buffs from bar")
-    cbHideCon:SetPoint("LEFT", rowHideCon, "LEFT", INDENT, 0)
-    cbHideCon:SetChecked(db and db.hideConsolidatedInBar)
-    cbHideCon.userOnClick = function()
-        local d = GetBBDB()
-        if d then d.hideConsolidatedInBar = cbHideCon:GetChecked() and true or false end
-        if bbBuffFrame and bbBuffFrame:IsShown() then BBUpdateBuffBar() end
-    end
 
     -- Buff icon size
     local rowBuffSz = NextRow(SUB_H)
@@ -1412,6 +1536,7 @@ function ART_BB_BuildSettingsSection(panel, anchor)
         end)
 
     -- ── Debuff Bar ────────────────────────────────────────────
+    NextRow(6)  -- spacer
     local rowDebuff = NextRow(ROW_H)
     local cbDebuff = ART_CreateCheckbox(rowDebuff, "Debuff Bar")
     cbDebuff:SetPoint("LEFT", rowDebuff, "LEFT", COL_CB, 0)
@@ -1428,6 +1553,7 @@ function ART_BB_BuildSettingsSection(panel, anchor)
     end
     lockDebuffBtn:SetScript("OnClick", function()
         local d = GetBBDB(); if d then d.debuffBarLocked = not d.debuffBarLocked end
+        if bbDebuffFrame and bbDebuffFrame:IsShown() then BBUpdateDebuffBar() end
         UpdateLockDebuff()
     end)
     UpdateLockDebuff()
@@ -1436,7 +1562,7 @@ function ART_BB_BuildSettingsSection(panel, anchor)
     resetDebuffBtn:SetPoint("LEFT", rowDebuff, "LEFT", COL_RESET, 0)
     resetDebuffBtn:SetScript("OnClick", function()
         local d = GetBBDB(); if not d then return end
-        d.debuffBarPoint = "TOPRIGHT"; d.debuffBarX = 0; d.debuffBarY = -200
+        d.debuffBarX = 0; d.debuffBarY = -200
         if bbDebuffFrame and bbDebuffFrame:IsShown() then
             bbDebuffFrame:ClearAllPoints()
             bbDebuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, -200)
@@ -1450,7 +1576,12 @@ function ART_BB_BuildSettingsSection(panel, anchor)
         function(v)
             local d = GetBBDB(); if not d then return end
             d.debuffIconSz = v
-            if bbDebuffFrame and bbDebuffFrame:IsShown() then BBUpdateDebuffBar() end
+            if bbDebuffFrame and bbDebuffFrame:IsShown() then
+                BBUpdateDebuffBar()
+                -- Re-anchor after frame resize (iconSz change alters BBLayout width).
+                bbDebuffFrame:ClearAllPoints()
+                bbDebuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", d.debuffBarX, d.debuffBarY)
+            end
         end)
 
     -- Debuff per-row
@@ -1460,10 +1591,16 @@ function ART_BB_BuildSettingsSection(panel, anchor)
         function(v)
             local d = GetBBDB(); if not d then return end
             d.debuffBarNumPerRow = v
-            if bbDebuffFrame and bbDebuffFrame:IsShown() then BBUpdateDebuffBar() end
+            if bbDebuffFrame and bbDebuffFrame:IsShown() then
+                BBUpdateDebuffBar()
+                -- Re-anchor after frame resize (perRow change alters BBLayout width).
+                bbDebuffFrame:ClearAllPoints()
+                bbDebuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", d.debuffBarX, d.debuffBarY)
+            end
         end)
 
     -- ── Weapon Buff Bar ───────────────────────────────────────
+    NextRow(6)  -- spacer
     local rowWeapon = NextRow(ROW_H)
     local cbWeapon = ART_CreateCheckbox(rowWeapon, "Weapon Buff Bar")
     cbWeapon:SetPoint("LEFT", rowWeapon, "LEFT", COL_CB, 0)
@@ -1492,7 +1629,7 @@ function ART_BB_BuildSettingsSection(panel, anchor)
     resetWepBtn:SetPoint("LEFT", rowWeapon, "LEFT", COL_RESET, 0)
     resetWepBtn:SetScript("OnClick", function()
         local d = GetBBDB(); if not d then return end
-        d.weaponBarPoint = "TOPRIGHT"; d.weaponBarX = 0; d.weaponBarY = -240
+        d.weaponBarX = 0; d.weaponBarY = -240
         if bbWeaponFrame and bbWeaponFrame:IsShown() then
             bbWeaponFrame:ClearAllPoints()
             bbWeaponFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, -240)
@@ -1506,7 +1643,12 @@ function ART_BB_BuildSettingsSection(panel, anchor)
         function(v)
             local d = GetBBDB(); if not d then return end
             d.weaponIconSz = v
-            if bbWeaponFrame and bbWeaponFrame:IsShown() then BBUpdateWeaponBar() end
+            if bbWeaponFrame and bbWeaponFrame:IsShown() then
+                BBUpdateWeaponBar()
+                -- Re-anchor after frame resize (iconSz change alters BBLayout width).
+                bbWeaponFrame:ClearAllPoints()
+                bbWeaponFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", d.weaponBarX, d.weaponBarY)
+            end
         end)
 
     -- Refresh callback for panel OnShow
@@ -1514,7 +1656,6 @@ function ART_BB_BuildSettingsSection(panel, anchor)
         local d = GetBBDB(); if not d then return end
         cbCon:SetChecked(d.consolidatedEnabled)
         cbBuff:SetChecked(d.buffBarEnabled)
-        cbHideCon:SetChecked(d.hideConsolidatedInBar)
         cbDebuff:SetChecked(d.debuffBarEnabled)
         cbWeapon:SetChecked(d.weaponBarEnabled)
         sliderBuffSz:SetVal(d.buffIconSz or BB_ICON_DEFAULT)
