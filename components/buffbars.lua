@@ -581,8 +581,15 @@ local function BBCreateConsolidatedFrame()
     ct:SetText("0")
     bbConFrame.countText = ct
 
-    -- Click = toggle text expansion list
-    bbConFrame:SetScript("OnMouseUp", function()
+    -- Invisible Button overlay covering the full icon area.
+    -- Buttons have more reliable full-area mouse detection in WoW 1.12 than Frames.
+    -- All clicks and hover events go here; the parent Frame handles drag.
+    local hitBtn = CreateFrame("Button", nil, bbConFrame)
+    hitBtn:SetAllPoints(bbConFrame)
+    hitBtn:SetFrameLevel(bbConFrame:GetFrameLevel() + 2)
+    hitBtn:RegisterForClicks("LeftButtonUp")
+
+    hitBtn:SetScript("OnClick", function()
         if not bbConExpFrame then BBCreateConsolidatedExpFrame() end
         bbConExpShown = not bbConExpShown
         if bbConExpShown then
@@ -592,9 +599,7 @@ local function BBCreateConsolidatedFrame()
             bbConExpFrame:Hide()
         end
     end)
-
-    -- Hover = show icon+timer popup
-    bbConFrame:SetScript("OnEnter", function()
+    hitBtn:SetScript("OnEnter", function()
         if not bbConHoverFrame then BBBuildConHoverFrame() end
         BBConCancelHide()
         bbConHoverFrame:ClearAllPoints()
@@ -602,7 +607,7 @@ local function BBCreateConsolidatedFrame()
         BBUpdateConHover()
         bbConHoverFrame:Show()
     end)
-    bbConFrame:SetScript("OnLeave", function()
+    hitBtn:SetScript("OnLeave", function()
         BBConStartHide()
     end)
 end
