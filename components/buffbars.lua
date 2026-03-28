@@ -1265,6 +1265,18 @@ local function BBBuildListPopup()
         rows[i] = row
     end
 
+    listBox:EnableMouseWheel(true)
+    listBox:SetScript("OnMouseWheel", function()
+        local db2 = GetBBDB()
+        local n   = db2 and getn(db2.consolidatedList) or 0
+        local delta = arg1
+        if delta > 0 then
+            if scrollOff > 0 then scrollOff = scrollOff - 1; RefreshRows() end
+        else
+            if scrollOff < n - DISP then scrollOff = scrollOff + 1; RefreshRows() end
+        end
+    end)
+
     local scrollUp = BBMakeBtn(listBox, "▲", 18, 18)
     scrollUp:SetPoint("TOPRIGHT", listBox, "TOPRIGHT", 0, 0)
     scrollUp:SetScript("OnClick", function()

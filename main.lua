@@ -321,7 +321,9 @@ local function CreateMinimapButton()
 		AmptieRaidToolsMinimapButton:Show()
 		return
 	end
-	local mb = CreateFrame("Button", "AmptieRaidToolsMinimapButton", UIParent)
+	-- Parent = Minimap so pfUI's addonbuttons scan (FindButtons(Minimap)) can detect it.
+	-- Positioning still uses cross-parent UIParent anchors for free placement anywhere.
+	local mb = CreateFrame("Button", "AmptieRaidToolsMinimapButton", Minimap)
 	mb:SetWidth(31)
 	mb:SetHeight(31)
 	mb:SetFrameStrata("MEDIUM")
