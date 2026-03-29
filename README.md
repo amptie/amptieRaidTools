@@ -250,7 +250,7 @@ Item Checks verifies that raid members are carrying the correct consumables and 
 
 ### Buff Checks
 
-[Screenshot: Buff Checks tab with profile list on left and rule list on right]
+<img width="882" height="639" alt="image" src="https://github.com/user-attachments/assets/95d55617-befe-40db-96f6-f341b8748fab" />
 
 Buff Checks verifies active buffs on raid members. Like Item Checks, it is profile-based with the same OR/AND condition structure, but conditions reference buffs rather than items.
 
@@ -264,8 +264,6 @@ Buff Checks verifies active buffs on raid members. Like Item Checks, it is profi
 Available buffs span hundreds of entries: world buffs, consumable buffs, class buffs, and resistance buffs.
 
 The **rule editor** opens within the rules panel when you click **+ Add Rule** or **Edit** on an existing rule.
-
-<img width="882" height="639" alt="image" src="https://github.com/user-attachments/assets/95d55617-befe-40db-96f6-f341b8748fab" />
 
 **Overlay** — when a check is running, the overlay shows which players are failing which rules. It auto-shows when failures are detected and auto-hides when all players pass. The overlay is only visible while in a raid.
 
