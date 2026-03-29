@@ -214,6 +214,7 @@ end
 
 local function UpdateOverlayVisibility()
 	local inGroup = IsInGroup()
+	local inRaid  = GetNumRaidMembers() > 0
 	local DB = amptieRaidToolsDB
 	if overlayFrame then
 		if inGroup and DB and DB.raidCDsShown then
@@ -224,7 +225,7 @@ local function UpdateOverlayVisibility()
 		end
 	end
 	if tauntOverlay then
-		if inGroup and DB and DB.taunterShown then
+		if inRaid and DB and DB.taunterShown then
 			tauntOverlay:Show()
 			if RefreshTauntDisplay then RefreshTauntDisplay() end
 		else

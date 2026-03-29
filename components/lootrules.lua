@@ -350,8 +350,13 @@ end
 local BTN_BD = {
     bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
-    tile=true, tileSize=8, edgeSize=8,
-    insets={left=2,right=2,top=2,bottom=2},
+    tile=true, tileSize=16, edgeSize=12,
+    insets={left=3,right=3,top=3,bottom=3},
+}
+local ROW_BD = {
+    bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
+    tile=true, tileSize=16, edgeSize=0,
+    insets={left=0,right=0,top=0,bottom=0},
 }
 local INPUT_BD = {
     bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
@@ -364,15 +369,15 @@ local function MakeBtn(parent, text, w, h)
     local btn = CreateFrame("Button", nil, parent)
     btn:SetWidth(w or 100); btn:SetHeight(h or 22)
     btn:SetBackdrop(BTN_BD)
-    btn:SetBackdropColor(0.1,0.1,0.14,0.95)
-    btn:SetBackdropBorderColor(0.35,0.35,0.42,1)
+    btn:SetBackdropColor(0.12,0.12,0.15,0.95)
+    btn:SetBackdropBorderColor(0.35,0.35,0.4,1)
     btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight","ADD")
     local lbl = btn:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
     lbl:SetPoint("CENTER",btn,"CENTER",0,0)
     lbl:SetText(text)
     btn.label = lbl
-    btn:SetScript("OnEnter",function() this:SetBackdropColor(0.18,0.18,0.24,0.95) end)
-    btn:SetScript("OnLeave",function() this:SetBackdropColor(0.1,0.1,0.14,0.95) end)
+    btn:SetScript("OnEnter",function() this:SetBackdropColor(0.18,0.18,0.22,0.95) end)
+    btn:SetScript("OnLeave",function() this:SetBackdropColor(0.12,0.12,0.15,0.95) end)
     return btn
 end
 
@@ -2086,9 +2091,20 @@ local function CreateLRLeftPanel(panel)
     local LEFT_W = 170
     local PROF_ROW_H = 24
 
+    local profHdr = panel:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
+    profHdr:SetPoint("TOPLEFT", panel,"TOPLEFT", 8,-52)
+    profHdr:SetText("Profiles")
+    profHdr:SetTextColor(0.9, 0.75, 0.2, 1)
+
+    local activeProfLbl = panel:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+    activeProfLbl:SetPoint("TOPLEFT", profHdr,"BOTTOMLEFT", 0,-4)
+    activeProfLbl:SetWidth(LEFT_W)
+    activeProfLbl:SetJustifyH("LEFT")
+    activeProfLbl:SetTextColor(0.5, 0.8, 0.5, 1)
+
     local profSF = CreateFrame("ScrollFrame",nil,panel)
-    profSF:SetPoint("TOPLEFT",   panel,"TOPLEFT",   8,-52)
-    profSF:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-364)
+    profSF:SetPoint("TOPLEFT",    activeProfLbl,"BOTTOMLEFT", 0,-4)
+    profSF:SetPoint("BOTTOMLEFT", panel,"TOPLEFT",8,-392)
     profSF:SetWidth(LEFT_W)
 
     local profContent = CreateFrame("Frame",nil,profSF)
@@ -2114,6 +2130,7 @@ local function CreateLRLeftPanel(panel)
 
     local function RefreshProfList()
         local db = GetLRDB()
+        activeProfLbl:SetText("Active: " .. (db.activeLRProfile or "--"))
         local names = {}; local cnt = 0
         for k in pairs(db.lootProfiles) do cnt=cnt+1; names[cnt]=k end
         table.sort(names)
@@ -2128,22 +2145,23 @@ local function CreateLRLeftPanel(panel)
             if not row then
                 row = CreateFrame("Button",nil,profContent)
                 row:SetHeight(PROF_ROW_H)
-                row:SetBackdrop(BTN_BD)
-                row:SetBackdropColor(0.1,0.1,0.14,0)
+                row:SetBackdrop(ROW_BD)
+                row:SetBackdropColor(0,0,0,0)
                 local lbl = row:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
                 lbl:SetPoint("LEFT",row,"LEFT",6,0)
+                lbl:SetPoint("RIGHT",row,"RIGHT",-4,0)
                 lbl:SetJustifyH("LEFT")
                 row.lbl = lbl
                 row:SetScript("OnEnter",function()
                     if this.profName ~= GetLRDB().activeLRProfile then
-                        this:SetBackdropColor(0.18,0.18,0.24,0.85)
+                        this:SetBackdropColor(0.18,0.18,0.22,0.9)
                     end
                 end)
                 row:SetScript("OnLeave",function()
                     if this.profName == GetLRDB().activeLRProfile then
-                        this:SetBackdropColor(0.22,0.22,0.28,0.9)
+                        this:SetBackdropColor(0.18,0.22,0.18,0.9)
                     else
-                        this:SetBackdropColor(0.1,0.1,0.14,0)
+                        this:SetBackdropColor(0,0,0,0)
                     end
                 end)
                 row:SetScript("OnClick",function()
@@ -2158,11 +2176,11 @@ local function CreateLRLeftPanel(panel)
             row.profName = names[i]
             row.lbl:SetText(names[i])
             if names[i] == db.activeLRProfile then
-                row.lbl:SetTextColor(1,0.82,0,1)
-                row:SetBackdropColor(0.22,0.22,0.28,0.9)
+                row.lbl:SetTextColor(0.5,1,0.5,1)
+                row:SetBackdropColor(0.18,0.22,0.18,0.9)
             else
                 row.lbl:SetTextColor(0.85,0.85,0.85,1)
-                row:SetBackdropColor(0.1,0.1,0.14,0)
+                row:SetBackdropColor(0,0,0,0)
             end
             row:Show()
         end
@@ -2176,17 +2194,15 @@ local function CreateLRLeftPanel(panel)
     -- y=34:  Rename
     -- y=8:   Simulate Loot
 
-    local HALF_BTN = floor((LEFT_W - 6) / 2)
+    local HALF_BTN = 80
 
     -- New button + floating editbox
     local newBtn = MakeBtn(panel,"New",HALF_BTN,22)
     newBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-444)
-    newBtn.label:SetTextColor(0.5,1,0.5,1)
-
     local newProfEdit = CreateFrame("EditBox",nil,UIParent)
-    newProfEdit:SetWidth(LEFT_W-2); newProfEdit:SetHeight(22)
+    newProfEdit:SetWidth(164); newProfEdit:SetHeight(22)
     newProfEdit:SetFrameStrata("FULLSCREEN_DIALOG")
-    newProfEdit:SetPoint("BOTTOM",newBtn,"TOP",HALF_BTN/2+3,4)
+    newProfEdit:SetPoint("BOTTOM",newBtn,"TOP",42,4)
     newProfEdit:SetAutoFocus(false); newProfEdit:SetMaxLetters(40)
     newProfEdit:SetFontObject(GameFontHighlightSmall)
     newProfEdit:SetTextInsets(4,4,0,0)
@@ -2219,7 +2235,7 @@ local function CreateLRLeftPanel(panel)
 
     -- Delete button
     local delBtn = MakeBtn(panel,"Delete",HALF_BTN,22)
-    delBtn:SetPoint("LEFT",newBtn,"RIGHT",6,0)
+    delBtn:SetPoint("LEFT",newBtn,"RIGHT",4,0)
     delBtn.label:SetTextColor(1,0.4,0.4,1)
     delBtn:SetScript("OnClick",function()
         local db = GetLRDB()
@@ -2235,11 +2251,11 @@ local function CreateLRLeftPanel(panel)
     end)
 
     -- Rename button + floating editbox
-    local renameBtn = MakeBtn(panel,"Rename",LEFT_W-2,22)
+    local renameBtn = MakeBtn(panel,"Rename",164,22)
     renameBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-496)
 
     local renameProfEdit = CreateFrame("EditBox",nil,UIParent)
-    renameProfEdit:SetWidth(LEFT_W-2); renameProfEdit:SetHeight(22)
+    renameProfEdit:SetWidth(164); renameProfEdit:SetHeight(22)
     renameProfEdit:SetFrameStrata("FULLSCREEN_DIALOG")
     renameProfEdit:SetPoint("BOTTOM",renameBtn,"TOP",0,4)
     renameProfEdit:SetAutoFocus(false); renameProfEdit:SetMaxLetters(40)
@@ -2274,19 +2290,19 @@ local function CreateLRLeftPanel(panel)
     end)
 
     -- Simulate Loot
-    local simBtn = MakeBtn(panel,"Simulate Loot",LEFT_W-2,22)
+    local simBtn = MakeBtn(panel,"Simulate Loot",164,22)
     simBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-522)
-    simBtn.label:SetTextColor(0.6,0.8,1,1)
+    simBtn.label:SetTextColor(0.6,0.85,1,1)
     simBtn:SetScript("OnClick",function() SimulateLoot() end)
 
     -- Export / Import
     local expBtn = MakeBtn(panel,"Export",HALF_BTN,22)
     expBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-470)
     local impBtn = MakeBtn(panel,"Import",HALF_BTN,22)
-    impBtn:SetPoint("LEFT",expBtn,"RIGHT",6,0)
+    impBtn:SetPoint("LEFT",expBtn,"RIGHT",4,0)
 
     -- Zone Bindings button + modal
-    local zoneBtn = MakeBtn(panel,"Zone Bindings",LEFT_W-2,22)
+    local zoneBtn = MakeBtn(panel,"Zone Bindings",164,22)
     zoneBtn:SetPoint("BOTTOMLEFT",panel,"TOPLEFT",8,-418)
     zoneBtn.label:SetTextColor(0.7,1,0.7,1)
 

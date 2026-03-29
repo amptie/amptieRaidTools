@@ -301,7 +301,7 @@ function AmptieRaidTools_InitRoleRoster(body)
     UpdateFilterLabel()
 
     -- Dropdown popup
-    local dd = CreateFrame("Frame", "ART_RR_Dropdown", panel)
+    local dd = CreateFrame("Frame", "ART_RR_Dropdown", UIParent)
     dd:SetFrameStrata("TOOLTIP")
     dd:SetWidth(150)
     local itemH   = 22

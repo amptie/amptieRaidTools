@@ -1199,8 +1199,8 @@ local function RefreshBCOverlay()
     end
 
     -- There are missing buffs → auto-show if overlay is enabled but was auto-hidden
-    local inGroup = GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0
-    if db2 and db2.bcOverlayShown and not bcOverlayFrame:IsShown() and inGroup then
+    local inRaid = GetNumRaidMembers() > 0
+    if db2 and db2.bcOverlayShown and not bcOverlayFrame:IsShown() and inRaid then
         bcOverlayFrame:Show()
     end
     if not bcOverlayFrame:IsShown() then return end  -- user explicitly closed
@@ -1374,6 +1374,12 @@ function AmptieRaidTools_InitBuffChecks(body)
     hdiv:SetPoint("TOPLEFT",  sub, "BOTTOMLEFT",  0, -6)
     hdiv:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -12, 0)
     hdiv:SetTexture(0.25, 0.25, 0.28, 0.8)
+
+    local vdiv = panel:CreateTexture(nil, "ARTWORK")
+    vdiv:SetWidth(1)
+    vdiv:SetPoint("TOP",    hdiv,  "BOTTOMLEFT", 190, 0)
+    vdiv:SetPoint("BOTTOM", panel, "BOTTOMLEFT", 190, 6)
+    vdiv:SetTexture(0.25, 0.25, 0.28, 0.8)
 
     -- ── Left panel: profile management ───────────────────────────
     local profTitle = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1937,7 +1943,8 @@ function AmptieRaidTools_InitBuffChecks(body)
     rulesSF:SetScript("OnMouseWheel", function() SetRulesScroll(rulesScrollOffset - arg1 * RULE_ROW_H * 2) end)
 
     local ruleRows = {}
-    local editorPanel  -- forward ref
+    local editorPanel         -- forward ref
+    local _ART_BC_RefreshEditor  -- forward ref
 
     local function RefreshRuleList()
         local db  = GetBCDB()
@@ -2003,8 +2010,9 @@ function AmptieRaidTools_InitBuffChecks(body)
                 bcRuleEditData.ruleIndex   = ruleIdx
                 bcRuleEditData.who         = { type=r2.who and r2.who.type or "everyone", value=r2.who and r2.who.value or "*" }
                 bcRuleEditData.conditions  = BCDeepCopy(r2.conditions or {})
+                rulesPanel:Hide()
                 editorPanel:Show()
-                if _ART_BC_RefreshRules then _ART_BC_RefreshRules() end
+                if _ART_BC_RefreshEditor then _ART_BC_RefreshEditor() end
             end)
             row.delBtn:SetScript("OnClick", function()
                 local prof2 = GetActiveBCProfile()
@@ -2018,16 +2026,14 @@ function AmptieRaidTools_InitBuffChecks(body)
 
     _ART_BC_RefreshRules = RefreshRuleList
 
-    -- ── Rule editor overlay ───────────────────────────────────────
-    editorPanel = CreateFrame("Frame", nil, UIParent)
-    editorPanel:SetAllPoints(panel)
-    editorPanel:SetFrameStrata("FULLSCREEN_DIALOG")
-    editorPanel:SetBackdrop({ bgFile="Interface\\Tooltips\\UI-Tooltip-Background", tile=true, tileSize=16, edgeSize=0, insets={left=0,right=0,top=0,bottom=0} })
-    editorPanel:SetBackdropColor(0.04, 0.04, 0.06, 0.97)
-    editorPanel:EnableMouse(true)
+    -- ── Rule editor (panel-local, covers rules area) ─────────────
+    editorPanel = CreateFrame("Frame", nil, panel)
+    editorPanel:SetPoint("TOPLEFT",     panel, "TOPLEFT",  RIGHT_X, PANEL_TOP_Y)
+    editorPanel:SetPoint("BOTTOMRIGHT", panel, "TOPRIGHT", -8, -522)
     editorPanel:Hide()
     panel:SetScript("OnHide", function()
         editorPanel:Hide()
+        rulesPanel:Show()
         shareModal:Hide()
         icModal:Hide()
         renameProfEdit:Hide(); renameProfEdit:ClearFocus()
@@ -2035,28 +2041,31 @@ function AmptieRaidTools_InitBuffChecks(body)
         for i = 1, getn(ART_BC_dropdownHiders) do ART_BC_dropdownHiders[i]() end
     end)
 
-    local edHdr = editorPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    edHdr:SetPoint("TOPLEFT", editorPanel, "TOPLEFT", 10, -10)
-    edHdr:SetTextColor(1, 0.82, 0, 1)
+    local edHdr = editorPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    edHdr:SetPoint("TOPLEFT", editorPanel, "TOPLEFT", 0, 0)
+    edHdr:SetTextColor(0.9, 0.75, 0.2, 1)
 
-    local edSaveBtn   = MakeBtn(editorPanel, "Save",   80, 22)
-    local edCancelBtn = MakeBtn(editorPanel, "Cancel", 80, 22)
-    edSaveBtn:SetPoint("TOPRIGHT", editorPanel, "TOPRIGHT", -10, -8)
-    edCancelBtn:SetPoint("RIGHT", edSaveBtn, "LEFT", -6, 0)
+    local edCancelBtn = MakeBtn(editorPanel, "Cancel", 70, 22)
+    edCancelBtn:SetPoint("TOPRIGHT", editorPanel, "TOPRIGHT", 0, 0)
+
+    local edSaveBtn = MakeBtn(editorPanel, "Save Rule", 80, 22)
+    edSaveBtn:SetPoint("RIGHT", edCancelBtn, "LEFT", -6, 0)
+    edSaveBtn.label:SetTextColor(0.5, 1, 0.5, 1)
 
     edCancelBtn:SetScript("OnClick", function()
         editorPanel:Hide()
+        rulesPanel:Show()
         RefreshRuleList()
     end)
 
     -- WHO section
-    local edWhoLbl = editorPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    edWhoLbl:SetPoint("TOPLEFT", editorPanel, "TOPLEFT", 10, -44)
-    edWhoLbl:SetText("Who:")
-    edWhoLbl:SetTextColor(0.7, 0.7, 0.7, 1)
+    local edWhoHdr = editorPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    edWhoHdr:SetPoint("TOPLEFT", editorPanel, "TOPLEFT", 0, -28)
+    edWhoHdr:SetText("Who")
+    edWhoHdr:SetTextColor(0.9, 0.75, 0.2, 1)
 
     local whoTypeDd  = MakeDropdown(editorPanel, 110, 6)
-    whoTypeDd.btn:SetPoint("LEFT", edWhoLbl, "RIGHT", 8, 0)
+    whoTypeDd.btn:SetPoint("TOPLEFT", edWhoHdr, "BOTTOMLEFT", 0, -4)
 
     local whoValueDd = MakeDropdown(editorPanel, 130, 10)
     whoValueDd.btn:SetPoint("LEFT", whoTypeDd.btn, "RIGHT", 6, 0)
@@ -2085,17 +2094,41 @@ function AmptieRaidTools_InitBuffChecks(body)
         bcRuleEditData.who.value = key
     end
 
-    -- Conditions section
-    local edCondLbl = editorPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    edCondLbl:SetPoint("TOPLEFT", editorPanel, "TOPLEFT", 10, -76)
-    edCondLbl:SetText("Conditions (OR groups):")
-    edCondLbl:SetTextColor(0.7, 0.7, 0.7, 1)
+    -- Conditions header
+    local edCondHdr = editorPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    edCondHdr:SetPoint("TOPLEFT", whoTypeDd.btn, "BOTTOMLEFT", 0, -14)
+    edCondHdr:SetText("Conditions  (OR groups / AND buffs within group)")
+    edCondHdr:SetTextColor(0.9, 0.75, 0.2, 1)
 
-    local addOrBtn = MakeBtn(editorPanel, "+ OR Group", 90, 20)
-    addOrBtn:SetPoint("LEFT", edCondLbl, "RIGHT", 10, 0)
+    -- Scrollable conditions area
+    local condSF = CreateFrame("ScrollFrame", nil, editorPanel)
+    condSF:SetPoint("TOPLEFT",     edCondHdr,   "BOTTOMLEFT",  0, -4)
+    condSF:SetPoint("BOTTOMRIGHT", editorPanel, "BOTTOMRIGHT", 0, 34)
 
-    -- OR group rows
+    local condContent = CreateFrame("Frame", nil, condSF)
+    condContent:SetWidth(RIGHT_W)
+    condContent:SetHeight(1)
+    condSF:SetScrollChild(condContent)
+
+    local condScrollOffset = 0
+    local function SetCondScroll(val)
+        local maxS = math.max(condContent:GetHeight() - condSF:GetHeight(), 0)
+        if val < 0 then val = 0 end
+        if val > maxS then val = maxS end
+        condScrollOffset = val
+        condContent:ClearAllPoints()
+        condContent:SetPoint("TOPLEFT", condSF, "TOPLEFT", 0, val)
+    end
+    condSF:EnableMouseWheel(true)
+    condSF:SetScript("OnMouseWheel", function()
+        SetCondScroll(condScrollOffset - arg1 * 26 * 2)
+    end)
+
+    -- OR group rows (children of condContent)
     local orGroupFrames = {}
+
+    local addOrBtn = MakeBtn(condContent, "+ OR Group", 90, 20)
+    addOrBtn.label:SetTextColor(1, 0.75, 0.3, 1)
 
     local function RefreshEditor()
         edHdr:SetText(bcRuleEditData.ruleIndex and "Edit Rule" or "New Rule")
@@ -2122,13 +2155,13 @@ function AmptieRaidTools_InitBuffChecks(body)
         for i = 1, getn(orGroupFrames) do orGroupFrames[i]:Hide() end
 
         local conds = bcRuleEditData.conditions
-        local yBase = -96
+        local yOff  = 0
 
         for oi = 1, getn(conds) do
             local grp = conds[oi]
             local gf  = orGroupFrames[oi]
             if not gf then
-                gf = CreateFrame("Frame", nil, editorPanel)
+                gf = CreateFrame("Frame", nil, condContent)
                 gf:SetHeight(28)
                 gf.andDds  = {}
                 gf.addAnd  = MakeBtn(gf, "+ AND", 52, 20)
@@ -2140,15 +2173,14 @@ function AmptieRaidTools_InitBuffChecks(body)
                 tinsert(orGroupFrames, gf)
             end
             gf:ClearAllPoints()
-            gf:SetPoint("TOPLEFT", editorPanel, "TOPLEFT", 10, yBase - (oi-1)*32)
-            gf:SetPoint("RIGHT",   editorPanel, "RIGHT", -10, 0)
+            gf:SetPoint("TOPLEFT", condContent, "TOPLEFT", 0, -yOff)
+            gf:SetPoint("RIGHT",   condContent, "RIGHT",   0, 0)
             gf.orLabel:SetText("OR " .. oi .. ":")
 
             -- Hide old AND dropdowns
             for k = 1, getn(gf.andDds) do gf.andDds[k].btn:Hide() end
 
             -- Create / refresh AND item dropdowns
-            local xOff = 52
             for ai = 1, getn(grp) do
                 local andDd = gf.andDds[ai]
                 if not andDd then
@@ -2156,9 +2188,8 @@ function AmptieRaidTools_InitBuffChecks(body)
                     tinsert(gf.andDds, andDd)
                 end
                 andDd.btn:ClearAllPoints()
-                andDd.btn:SetPoint("LEFT", gf, "LEFT", xOff + (ai-1)*174, 0)
+                andDd.btn:SetPoint("LEFT", gf, "LEFT", 52 + (ai-1)*174, 0)
                 andDd.btn:Show()
-                -- Set current value
                 local b = ART_BC_BY_KEY[grp[ai].key]
                 if b then andDd.SetValue(grp[ai].key, b.name) end
 
@@ -2169,24 +2200,18 @@ function AmptieRaidTools_InitBuffChecks(body)
                         conds2[captOi][captAi].key = k
                     end
                 end
-                xOff = xOff + 0  -- positions computed per-ai above
             end
 
             -- + AND button
             gf.addAnd:ClearAllPoints()
             gf.addAnd:SetPoint("LEFT", gf, "LEFT", 52 + getn(grp)*174, 0)
-            if getn(grp) < BC_MAX_AND then
-                gf.addAnd:Show()
-            else
-                gf.addAnd:Hide()
-            end
+            if getn(grp) < BC_MAX_AND then gf.addAnd:Show() else gf.addAnd:Hide() end
 
             local captOi2 = oi
             gf.addAnd:SetScript("OnClick", function()
                 local conds2 = bcRuleEditData.conditions
                 if conds2[captOi2] and getn(conds2[captOi2]) < BC_MAX_AND then
-                    local firstKey = ART_BC_BUFFS[1].key
-                    tinsert(conds2[captOi2], { key=firstKey })
+                    tinsert(conds2[captOi2], { key=ART_BC_BUFFS[1].key })
                     RefreshEditor()
                 end
             end)
@@ -2202,29 +2227,37 @@ function AmptieRaidTools_InitBuffChecks(body)
             end)
 
             gf:Show()
+            yOff = yOff + 32
         end
 
-        -- + OR Group button
+        -- + OR Group button at bottom of condContent
+        addOrBtn:ClearAllPoints()
+        addOrBtn:SetPoint("TOPLEFT", condContent, "TOPLEFT", 0, -yOff)
         addOrBtn:SetScript("OnClick", function()
             if getn(bcRuleEditData.conditions) < BC_MAX_OR then
                 tinsert(bcRuleEditData.conditions, { { key=ART_BC_BUFFS[1].key } })
                 RefreshEditor()
             end
         end)
+        condContent:SetHeight(math.max(yOff + 24, 1))
+        SetCondScroll(0)
     end
+
+    _ART_BC_RefreshEditor = RefreshEditor
 
     addRuleBtn:SetScript("OnClick", function()
         bcRuleEditData.profileName = GetBCDB().activeBCProfile
         bcRuleEditData.ruleIndex   = nil
         bcRuleEditData.who         = { type="everyone", value="*" }
         bcRuleEditData.conditions  = {}
+        rulesPanel:Hide()
         editorPanel:Show()
         RefreshEditor()
     end)
 
     edSaveBtn:SetScript("OnClick", function()
         local prof = GetActiveBCProfile()
-        if not prof then editorPanel:Hide(); return end
+        if not prof then editorPanel:Hide(); rulesPanel:Show(); return end
         local newRule = {
             who        = { type=bcRuleEditData.who.type, value=bcRuleEditData.who.value },
             conditions = BCDeepCopy(bcRuleEditData.conditions),
@@ -2235,6 +2268,7 @@ function AmptieRaidTools_InitBuffChecks(body)
             tinsert(prof.rules, newRule)
         end
         editorPanel:Hide()
+        rulesPanel:Show()
         RefreshRuleList()
     end)
 
@@ -2270,11 +2304,14 @@ function AmptieRaidTools_InitBuffChecks(body)
             local db2 = amptieRaidToolsDB
             -- Apply zone binding first so the correct profile is active
             ApplyZoneBinding()
-            -- Restore overlay and start initial check if it was active
-            if db2 and db2.bcOverlayShown and db2.activeBCProfile then
+            -- Restore overlay and start initial check if it was active (raid only)
+            if db2 and db2.bcOverlayShown and db2.activeBCProfile and GetNumRaidMembers() > 0 then
                 if not bcOverlayFrame then CreateBCOverlay() end
                 bcOverlayFrame:Show()
                 ART_BC_StartCheck(db2.activeBCProfile)
+                UpdateOvlBtn()
+            elseif bcOverlayFrame then
+                bcOverlayFrame:Hide()
                 UpdateOvlBtn()
             end
         elseif ev == "RAID_ROSTER_UPDATE" or ev == "PARTY_MEMBERS_CHANGED" then
@@ -2285,8 +2322,8 @@ function AmptieRaidTools_InitBuffChecks(body)
             if db2 and db2.bcOverlayShown then
                 bcRosterDirty = true   -- handled by 5s poll timer
             end
-            -- Close overlay when leaving group entirely
-            if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+            -- Close overlay when leaving raid
+            if GetNumRaidMembers() == 0 then
                 if bcOverlayFrame then bcOverlayFrame:Hide() end
                 UpdateOvlBtn()
             end

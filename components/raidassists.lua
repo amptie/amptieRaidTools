@@ -142,14 +142,18 @@ end
 local raEvt = CreateFrame("Frame", "ART_RA_EventFrame", UIParent)
 raEvt:RegisterEvent("RAID_ROSTER_UPDATE")
 raEvt:RegisterEvent("PARTY_MEMBERS_CHANGED")
+raEvt:RegisterEvent("PLAYER_LOGIN")
+raEvt:RegisterEvent("PLAYER_ENTERING_WORLD")
 raEvt:RegisterEvent("CHAT_MSG_WHISPER")
 raEvt:RegisterEvent("CHAT_MSG_ADDON")
 raEvt:SetScript("OnEvent", function()
 	local evt    = event
 	local a1, a2 = arg1, arg2
 
-	if evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
-		if GetNumRaidMembers() == 0 and GetNumPartyMembers() == 0 then
+	if evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED"
+	or evt == "PLAYER_LOGIN" or evt == "PLAYER_ENTERING_WORLD" then
+		-- Clear MT targets when not in a raid
+		if GetNumRaidMembers() == 0 then
 			local db = GetDB()
 			if db then
 				for i = 1, NUM_MT_SLOTS do
@@ -159,7 +163,9 @@ raEvt:SetScript("OnEvent", function()
 				if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
 			end
 		end
-		RunAutoAssists()
+		if evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
+			RunAutoAssists()
+		end
 
 	elseif evt == "CHAT_MSG_WHISPER" then
 		-- a1 = message text, a2 = sender name
@@ -647,6 +653,15 @@ function AmptieRaidTools_InitRaidAssists(body)
 		if not db then return end
 		for i = 1, NUM_MT_SLOTS do
 			if mtEBs[i] then db.mainTanks[i] = mtEBs[i]:GetText() end
+		end
+		-- Block broadcast when all fields are empty
+		local allEmpty = true
+		for i = 1, NUM_MT_SLOTS do
+			if db.mainTanks[i] and db.mainTanks[i] ~= "" then allEmpty = false; break end
+		end
+		if allEmpty then
+			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Cannot broadcast: all MT fields are empty.")
+			return
 		end
 		BroadcastMTs()
 		if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end

@@ -570,7 +570,7 @@ local function BBCreateConsolidatedFrame()
     local icon = bbConFrame:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT",     bbConFrame, "TOPLEFT",     BB_PAD, -BB_PAD)
     icon:SetPoint("BOTTOMRIGHT", bbConFrame, "BOTTOMRIGHT", -BB_PAD, BB_PAD)
-    icon:SetTexture("Interface\\Icons\\inv_enchant_dustsoul")
+    icon:SetTexture("Interface\\Icons\\inv_misc_bag_felclothbag")
     icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     bbConFrame.mainIcon = icon
 

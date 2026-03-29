@@ -696,10 +696,10 @@ function AmptieRaidTools_InitItemChecks(body)
     vdiv:SetPoint("BOTTOM", panel, "BOTTOMLEFT", 190, 6)
     vdiv:SetTexture(0.25, 0.25, 0.28, 0.8)
 
-    local PANEL_TOP_Y = -50   -- below hdiv approx
+    local PANEL_TOP_Y = -52   -- below hdiv approx
     local LEFT_W  = 182
-    local RIGHT_X = 198
-    local RIGHT_W = 420
+    local RIGHT_X = LEFT_W + 20   -- = 202
+    local RIGHT_W = 380
 
     -- ── Profile list (left panel) ────────────────────────────────
     local profHdr = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -717,7 +717,7 @@ function AmptieRaidTools_InitItemChecks(body)
     -- Profile scroll area
     local profSF = CreateFrame("ScrollFrame", nil, panel)
     profSF:SetPoint("TOPLEFT",     activeProfLabel, "BOTTOMLEFT", 0, -4)
-    profSF:SetPoint("BOTTOMLEFT",  panel, "TOPLEFT", 8, -444)
+    profSF:SetPoint("BOTTOMLEFT",  panel, "TOPLEFT", 8, -392)
     profSF:SetWidth(LEFT_W)
 
     local profContent = CreateFrame("Frame", nil, profSF)
@@ -808,28 +808,30 @@ function AmptieRaidTools_InitItemChecks(body)
         end
     end
 
-    -- New / Delete / Export / Import buttons at bottom of left panel
-    -- Row 1 (bottom): Export · Import
+    -- ── Buttons (matching buffchecks layout) ─────────────────────
+    -- Row 1 (y=-444): New | Delete
+    -- Row 2 (y=-470): Export | Import
+    -- Row 3 (y=-496): Rename
+    local newProfBtn = MakeBtn(panel, "New", 80, 22)
+    newProfBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -444)
+
+    local delProfBtn = MakeBtn(panel, "Delete", 80, 22)
+    delProfBtn:SetPoint("LEFT", newProfBtn, "RIGHT", 4, 0)
+    delProfBtn.label:SetTextColor(1, 0.4, 0.4, 1)
+
     local expBtn = MakeBtn(panel, "Export", 80, 22)
-    expBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -522)
+    expBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -470)
 
     local impBtn = MakeBtn(panel, "Import", 80, 22)
     impBtn:SetPoint("LEFT", expBtn, "RIGHT", 4, 0)
 
-    -- Row 2: Rename (full width)
     local renameBtn = MakeBtn(panel, "Rename", 164, 22)
     renameBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -496)
 
-    -- Row 3: New · Delete
-    local newProfBtn = MakeBtn(panel, "+ New", 80, 22)
-    newProfBtn:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", 8, -470)
-
-    local delProfBtn = MakeBtn(panel, "Delete", 80, 22)
-    delProfBtn:SetPoint("LEFT", newProfBtn, "RIGHT", 4, 0)
-
-    -- Inline name editbox (hidden until New is clicked)
-    local newProfEdit = MakeEditBox(panel, LEFT_W, 22)
-    newProfEdit:SetPoint("BOTTOM", newProfBtn, "TOP", 0, 4)
+    -- Inline new-profile editbox (parented to UIParent so it floats above panels)
+    local newProfEdit = MakeEditBox(UIParent, 164, 22)
+    newProfEdit:SetFrameStrata("FULLSCREEN_DIALOG")
+    newProfEdit:SetPoint("BOTTOM", newProfBtn, "TOP", 42, 4)
     newProfEdit:SetMaxLetters(40)
     newProfEdit:Hide()
 
@@ -1093,7 +1095,7 @@ function AmptieRaidTools_InitItemChecks(body)
 
                 row.condFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
                 row.condFS:SetPoint("LEFT", row.whoFS, "RIGHT", 6, 0)
-                row.condFS:SetWidth(220)
+                row.condFS:SetWidth(210)
                 row.condFS:SetJustifyH("LEFT")
                 row.condFS:SetTextColor(0.85, 0.85, 0.85, 1)
 

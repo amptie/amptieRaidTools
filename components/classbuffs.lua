@@ -305,9 +305,12 @@ local CB_OVL_MAX_VIS = 14
 -- Always hide when not in any group (raid or party), regardless of onlyInGroup.
 local function CBOverlayUpdateVisibility()
     if not cbOverlayFrame then return end
-    local db = GetCBDB()
-    local inGroup = GetNumRaidMembers() > 0 or GetNumPartyMembers() > 0
-    if not db.ovlShown or not inGroup then
+    local db     = GetCBDB()
+    local inRaid  = GetNumRaidMembers() > 0
+    local inGroup = inRaid or GetNumPartyMembers() > 0
+    -- showAll (= tracking all classes) requires a raid; own-class tracking works in group too
+    local canShow = db.showAll and inRaid or (not db.showAll and inGroup)
+    if not db.ovlShown or not canShow then
         cbOverlayFrame:Hide()
         return
     end
