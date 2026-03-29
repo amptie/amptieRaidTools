@@ -104,6 +104,15 @@ local function RemoveSession(sid)
     if councilIdx > nn then councilIdx = math.max(1, nn) end
 end
 
+-- Returns true if any session is still open for voting (not yet awarded or closed).
+local function HasUnawardedSession()
+    for i = 1, getn(sessionOrder) do
+        local s = allSessions[sessionOrder[i]]
+        if s and not s.awarded then return true end
+    end
+    return false
+end
+
 -- forward declarations
 local OpenVotePopup
 local CloseVotePopup
@@ -1161,10 +1170,14 @@ local function CreateCouncilFrame()
                 OnAccept = function()
                     local cs = GetCouncilSession()
                     if not cs then return end
+                    -- Include winner's vote name and roll in the message so all clients can display it
+                    local vd       = cs.votes and cs.votes[pname]
+                    local btnName  = (vd and vd.btnName) or ""
+                    local roll     = (vd and vd.roll)    or 0
                     local aMsg = "LC_AWARD^"..cs.sid.."^"..pname.."^"..(cs.itemLink or "")
+                                  .."^"..btnName.."^"..tostring(roll)
                     if cs.isSim then
                         SendLC(aMsg)
-                        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[ART-LC]|r [Sim] Awarded "..(cs.itemLink or "").." to "..pname)
                     else
                         local cidx = nil
                         for ci = 1, 40 do
@@ -1178,16 +1191,25 @@ local function CreateCouncilFrame()
                         end
                         GiveMasterLoot(cs.slot, cidx)
                         SendLC(aMsg)
-                        DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[ART-LC]|r Awarded to "..pname)
                     end
-                    cs.closed = true
+                    -- Track award
+                    cs.awardCount = (cs.awardCount or 0) + 1
+                    tinsert(cs.awardedTo, pname)
+                    -- Remove the used slot from the front of the slots list
+                    if cs.slots then
+                        local newSlots = {}; newSlots.n = 0
+                        for si = 2, getn(cs.slots) do tinsert(newSlots, cs.slots[si]) end
+                        cs.slots = newSlots
+                        cs.slot  = cs.slots[1] or cs.slot
+                    end
+                    local remaining = (cs.quantity or 1) - cs.awardCount
+                    if remaining <= 0 then
+                        -- All copies awarded — mark session fully awarded
+                        cs.awarded = cs.awardedTo[1]
+                    end
                     CloseVotePopup(cs.sid)
-                    RemoveSession(cs.sid)
-                    if getn(sessionOrder) == 0 then
-                        CloseCouncilFrame()
-                    else
-                        UpdateCouncilNav(); RefreshCouncilRows()
-                    end
+                    UpdateCouncilNav()
+                    RefreshCouncilRows()
                 end,
                 timeout=0, whileDead=true, hideOnEscape=true,
             }
@@ -1372,7 +1394,7 @@ RefreshCouncilRows = function()
             end
             row.commentFS:SetText(e.comment)
             row.awardBtn.rowPlayer = e.isDVRow and "" or e.player
-            if not e.isDVRow and (cs.isML or IsRaidLeader()) then row.awardBtn:Show() else row.awardBtn:Hide() end
+            if not e.isDVRow and (cs.isML or IsRaidLeader()) and not cs.awarded then row.awardBtn:Show() else row.awardBtn:Hide() end
 
             -- Officer vote button
             local target = e.player
@@ -1403,7 +1425,7 @@ RefreshCouncilRows = function()
                 end
                 RefreshCouncilRows()
             end)
-            if not e.isDVRow and (cs.isOfficer or cs.isML) then
+            if not e.isDVRow and (cs.isOfficer or cs.isML) and not cs.awarded then
                 row.cvoteBtn:Show()
             else
                 row.cvoteBtn:Hide()
@@ -1436,7 +1458,19 @@ RefreshCouncilRows = function()
         end
     end
 
-    councilFrame.statusFS:SetText("Votes: "..totalVotes.." (shown: "..ec..")")
+    local awardedTo = cs.awardedTo
+    if awardedTo and getn(awardedTo) > 0 then
+        local names = awardedTo[1]
+        for ai = 2, getn(awardedTo) do names = names..", "..awardedTo[ai] end
+        if cs.awarded then
+            councilFrame.statusFS:SetText("|cFF88FF88Awarded: "..names.."|r")
+        else
+            local remaining = (cs.quantity or 1) - (cs.awardCount or 0)
+            councilFrame.statusFS:SetText("|cFFFFD700Awarded: "..names.." — "..tostring(remaining).." remaining|r")
+        end
+    else
+        councilFrame.statusFS:SetText("Votes: "..totalVotes.." (shown: "..ec..")")
+    end
 
     -- Update scroll range to match actual entry count
     local contentH = math.max(ec * CROW_H, 1)
@@ -1475,7 +1509,18 @@ UpdateCouncilNav = function()
         councilFrame.iconBtn.itemLink  = cs.itemLink
         councilFrame.nameBtn.hyperlink = hl
         councilFrame.nameBtn.itemLink  = cs.itemLink
-        councilFrame.nameFS:SetText(cs.itemLink or "Unknown")
+        local nameText = cs.itemLink or "Unknown"
+        local qty = cs.quantity or 1
+        local awarded = cs.awardCount or 0
+        local remaining = qty - awarded
+        if qty > 1 then
+            if remaining > 0 then
+                nameText = nameText.." |cFFFFFFFFx"..tostring(remaining).."/"..tostring(qty).."|r"
+            else
+                nameText = nameText.." |cFF88FF88x"..tostring(qty).." (all awarded)|r"
+            end
+        end
+        councilFrame.nameFS:SetText(nameText)
         councilFrame.titleFS:SetText(cs and cs.isDKP and "DKP Bidding" or "Loot Council")
     end
 
@@ -1760,7 +1805,8 @@ OnLCMessage = function(sender, msg)
         -- parts[7] = officers (semicolon-separated), parts[8+] = buttons
         -- Older messages (no officers field) have buttons at parts[7] — detected by presence of "~"
         local isDKP = false
-        local timerFromMsg = nil
+        local timerFromMsg    = nil
+        local quantityFromMsg = nil
         local officers = {}
         local btnStart = 7
         if parts[7] and string.find(parts[7], "~", 1, true) == nil then
@@ -1781,6 +1827,12 @@ OnLCMessage = function(sender, msg)
                    and tonumber(parts[9]) then
                     timerFromMsg = tonumber(parts[9])
                     btnStart = 10
+                    -- Check for quantity at parts[10] (pure number, no "~")
+                    if parts[10] and parts[10] ~= "" and string.find(parts[10], "~", 1, true) == nil
+                       and tonumber(parts[10]) then
+                        quantityFromMsg = tonumber(parts[10])
+                        btnStart = 11
+                    end
                 end
             end
         end
@@ -1799,10 +1851,15 @@ OnLCMessage = function(sender, msg)
                 {name="Pass",      priority=6},
             }
         end
-        local timer = timerFromMsg or (prof and prof.timer) or 60
+        local timer    = timerFromMsg    or (prof and prof.timer) or 60
+        local quantity = quantityFromMsg or 1
         local newS = {
             sid          = sid,
             slot         = slot,
+            slots        = {slot},
+            quantity     = quantity,
+            awardCount   = 0,
+            awardedTo    = {},
             itemLink     = itemLink,
             quality      = quality,
             iconPath     = iconPath,
@@ -1849,23 +1906,54 @@ OnLCMessage = function(sender, msg)
         end
 
     elseif tag == "LC_AWARD" then
-        local s = allSessions[parts[2]]
+        local s          = allSessions[parts[2]]
         local winnerName = parts[3]
         local aLink      = parts[4] or ""
-        local myName = UnitName("player")
-        if myName == winnerName then
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[Loot Council]|r You received "..aLink.."!")
+        local voteName   = parts[5] or ""
+        local roll       = tonumber(parts[6]) or 0
+        -- Build announcement line: "[aRT] [Player] receives [Item] for [Vote]" (+ roll if present)
+        local annLine
+        if voteName ~= "" then
+            annLine = "|cffffff00[aRT]|r "..winnerName.." receives "..aLink.." for "..voteName
+            if roll > 0 then
+                annLine = annLine.." (Roll: "..tostring(roll)..")"
+            end
         else
-            DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[Loot Council]|r "..winnerName.." received "..aLink)
+            annLine = "|cffffff00[aRT]|r "..winnerName.." receives "..aLink
+        end
+        -- Send to raid chat (ML who calls GiveMasterLoot is the only one who can
+        -- SendChatMessage to RAID; all others just print locally via the addon msg)
+        local myName = UnitName("player")
+        if myName == sender or (not sender) then
+            -- We are the awarder — send to raid chat so everyone sees it in chat log
+            if GetNumRaidMembers() > 0 then
+                SendChatMessage(annLine, "RAID")
+            elseif GetNumPartyMembers() > 0 then
+                SendChatMessage(annLine, "PARTY")
+            else
+                DEFAULT_CHAT_FRAME:AddMessage(annLine)
+            end
+        else
+            -- Non-awarder: print the line locally (already received via addon msg)
+            DEFAULT_CHAT_FRAME:AddMessage(annLine)
         end
         if s then
-            s.closed = true
+            s.awardCount = (s.awardCount or 0) + 1
+            if not s.awardedTo then s.awardedTo = {} end
+            tinsert(s.awardedTo, winnerName)
+            -- Remove front slot (non-ML clients don't have GiveMasterLoot but track state)
+            if s.slots and getn(s.slots) > 0 then
+                local newSlots = {}; newSlots.n = 0
+                for si = 2, getn(s.slots) do tinsert(newSlots, s.slots[si]) end
+                s.slots = newSlots
+            end
+            local remaining = (s.quantity or 1) - s.awardCount
+            if remaining <= 0 then
+                s.awarded = winnerName
+            end
             CloseVotePopup(s.sid)
-            RemoveSession(s.sid)
         end
-        if getn(sessionOrder) == 0 then
-            CloseCouncilFrame()
-        elseif councilFrame and councilFrame:IsShown() then
+        if councilFrame and councilFrame:IsShown() then
             UpdateCouncilNav(); RefreshCouncilRows()
         end
 
@@ -1939,55 +2027,94 @@ lcLootFrame:SetScript("OnEvent",function()
     local evt = event
     if evt == "LOOT_OPENED" then
         if not IsPlayerML() then return end
-        if getn(sessionOrder) > 0 then return end  -- session already active, wait for End Session
+        -- Re-map loot slots for active (unawarded) sessions: closing and reopening the
+        -- loot window resets slot indices, so update them by matching item links.
+        -- For multi-quantity sessions track remaining slots needed.
+        for i = 1, getn(sessionOrder) do
+            local s = allSessions[sessionOrder[i]]
+            if s and not s.awarded then
+                local needed = (s.quantity or 1) - (s.awardCount or 0)
+                local found = {}; local fc = 0
+                for sl = 1, GetNumLootItems() do
+                    local link2 = GetLootSlotLink(sl)
+                    if link2 and link2 == s.itemLink then
+                        fc = fc + 1; found[fc] = sl
+                        if fc >= needed then break end
+                    end
+                end
+                -- Rebuild slots list from found slots
+                s.slots = {}; s.slots.n = 0
+                for fi = 1, fc do tinsert(s.slots, found[fi]) end
+                s.slot = s.slots[1] or s.slot
+            end
+        end
+        if HasUnawardedSession() then return end  -- active vote in progress, wait for End Session
         local prof = GetActiveLRProfile()
         if not prof or (prof.mode ~= "lootcouncil" and prof.mode ~= "dkp") then return end
         local isDKP = (prof.mode == "dkp")
         local myName = UnitName("player")
+        -- Collect items, grouping duplicates by itemLink
+        local byLink = {}; local linkOrder = {}; local lo = 0
         for slot = 1, GetNumLootItems() do
             local slotTex, itemName, _, quality = GetLootSlotInfo(slot)
             if itemName and itemName ~= "" then
                 local itemLink = GetLootSlotLink(slot)
-                if ShouldTrigger(quality, itemLink, prof) then
-                    local candidate1 = GetMasterLootCandidate(1)
-                    if candidate1 then
-                        local sid      = myName.."_"..slot.."_"..floor(GetTime())
-                        local iconPath = slotTex or GetItemTexture(itemLink)
-                        local newS = {
-                            sid          = sid,
-                            slot         = slot,
-                            itemLink     = itemLink,
-                            quality      = quality,
-                            iconPath     = iconPath,
-                            votes        = {},
-                            dVotes       = {},
-                            councilVotes = {},
-                            buttons      = prof.buttons or {},
-                            isML         = true,
-                            isOfficer    = true,
-                            isDKP        = isDKP,
-                            timerEnd     = GetTime()+(prof.timer or 60),
-                            closed       = false,
-                        }
-                        AddSession(newS)
-                        local openMsg = "LC_OPEN^"..sid.."^"..slot.."^"..(itemLink or "").."^"..quality
-                                        .."^"..iconPath.."^"..EncodeOfficers(prof.officers)
-                                        .."^"..(isDKP and "1" or "0")
-                                        .."^"..tostring(prof.timer or 60)..EncodeLCButtons(prof.buttons or {})
-                        SendLC(openMsg)
-                        OpenVotePopup(newS)
-                        if not isDKP then
-                            if not councilFrame or not councilFrame:IsShown() then
-                                councilIdx = getn(sessionOrder)
-                                OpenCouncilFrame()
-                            else
-                                UpdateCouncilNav()
-                            end
-                        end
-                        -- DKP: council frame opens after timer expires (lcTimerFrame OnUpdate)
+                if itemLink and ShouldTrigger(quality, itemLink, prof) and GetMasterLootCandidate(1) then
+                    if not byLink[itemLink] then
+                        lo = lo + 1; linkOrder[lo] = itemLink
+                        byLink[itemLink] = { slots={}, slots_n=0, quality=quality, tex=slotTex }
                     end
+                    local g = byLink[itemLink]
+                    g.slots_n = g.slots_n + 1; g.slots[g.slots_n] = slot
                 end
             end
+        end
+        for li = 1, lo do
+            local itemLink = linkOrder[li]
+            local g        = byLink[itemLink]
+            local quantity = g.slots_n
+            local sid      = myName.."_"..g.slots[1].."_"..floor(GetTime())
+            local iconPath = g.tex or GetItemTexture(itemLink)
+            local slotsT   = {}; slotsT.n = quantity
+            for qi = 1, quantity do slotsT[qi] = g.slots[qi] end
+            local newS = {
+                sid          = sid,
+                slot         = slotsT[1],
+                slots        = slotsT,
+                quantity     = quantity,
+                awardCount   = 0,
+                awardedTo    = {},
+                itemLink     = itemLink,
+                quality      = g.quality,
+                iconPath     = iconPath,
+                votes        = {},
+                dVotes       = {},
+                councilVotes = {},
+                buttons      = prof.buttons or {},
+                isML         = true,
+                isOfficer    = true,
+                isDKP        = isDKP,
+                timerEnd     = GetTime()+(prof.timer or 60),
+                closed       = false,
+            }
+            AddSession(newS)
+            local openMsg = "LC_OPEN^"..sid.."^"..slotsT[1].."^"..(itemLink or "").."^"..g.quality
+                            .."^"..iconPath.."^"..EncodeOfficers(prof.officers)
+                            .."^"..(isDKP and "1" or "0")
+                            .."^"..tostring(prof.timer or 60)
+                            .."^"..tostring(quantity)
+                            ..EncodeLCButtons(prof.buttons or {})
+            SendLC(openMsg)
+            OpenVotePopup(newS)
+            if not isDKP then
+                if not councilFrame or not councilFrame:IsShown() then
+                    councilIdx = getn(sessionOrder)
+                    OpenCouncilFrame()
+                else
+                    UpdateCouncilNav()
+                end
+            end
+            -- DKP: council frame opens after timer expires (lcTimerFrame OnUpdate)
         end
     elseif evt == "LOOT_CLOSED" then
         -- nothing — sessions stay open until awarded/closed explicitly

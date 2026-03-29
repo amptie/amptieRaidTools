@@ -832,14 +832,6 @@ local function BBCreateDebuffBar()
             d.debuffBarY = this:GetTop()   - UIParent:GetTop()
         end
     end)
-    -- Backdrop child: dynamically sized to cover only visible slots.
-    -- Its SetWidth/SetHeight never affects the container's anchor.
-    local dBD = CreateFrame("Frame", nil, bbDebuffFrame)
-    dBD:SetBackdrop(BB_BD)
-    dBD:SetBackdropColor(0, 0, 0, 0.7)
-    dBD:SetBackdropBorderColor(0.55, 0.1, 0.1, 0.8)
-    dBD:Hide()
-    bbDebuffFrame.backdropChild = dBD
     bbDebuffFrame:Hide()
     for i = 1, BB_MAX_DEBUFFS do
         bbDebuffBtns[i] = BBMakeIconBtn(bbDebuffFrame, i - 1)
@@ -852,7 +844,6 @@ local function BBUpdateDebuffBar()
     local iconSz = (db and db.debuffIconSz) or BB_ICON_DEFAULT
     local perRow = (db and db.debuffBarNumPerRow) or 8
     local locked = db and db.debuffBarLocked
-    local stepH  = iconSz + BB_PAD
 
     -- Pre-scan UnitDebuff for debuff type (needed for border colour).
     -- UnitDebuff and GetPlayerBuff(N,"HARMFUL") can return debuffs in different
@@ -905,31 +896,13 @@ local function BBUpdateDebuffBar()
         for i = visible + 1, BB_MAX_DEBUFFS do bbDebuffBtns[i]:Hide() end
     end
 
-    local dBD = bbDebuffFrame.backdropChild
     if locked and visible == 0 then
-        -- Nothing to show: invisible + non-interactive (avoid blocking buff bar mouse).
         bbDebuffFrame:SetAlpha(0)
         bbDebuffFrame:EnableMouse(false)
-        if dBD then dBD:Hide() end
         return
     end
-
-    -- Size backdrop child to cover only the displayed slots.
-    -- The child's resize never touches the container → no anchor drift.
     bbDebuffFrame:SetAlpha(1)
     bbDebuffFrame:EnableMouse(true)
-    if dBD then
-        local dispSlots = locked and visible or BB_MAX_DEBUFFS
-        local dispCols  = mmin(dispSlots, perRow)
-        local dispRows  = mceil(dispSlots / perRow)
-        local bdW = dispCols * stepH + BB_PAD
-        local bdH = dispRows * (iconSz + BB_PAD) + BB_PAD * 2
-        dBD:ClearAllPoints()
-        dBD:SetPoint("TOPRIGHT", bbDebuffFrame, "TOPRIGHT", -BB_PAD, 0)
-        dBD:SetWidth(bdW)
-        dBD:SetHeight(bdH)
-        dBD:Show()
-    end
 end
 
 -- ============================================================
