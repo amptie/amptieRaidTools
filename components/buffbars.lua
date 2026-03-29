@@ -418,7 +418,7 @@ local function BBUpdateConHover()
             end
             local tl = a.timeLeft
             btn.timer:SetText((tl and tl > 0) and BBFmtTime(tl) or "")
-            btn.timer:SetTextColor(1, 1, 1, 1)
+            btn.timer:SetTextColor(1, (tl and tl < 60) and 1 or 1, (tl and tl < 60) and 0 or 1, 1)
         else
             btn:Hide()
         end
@@ -703,7 +703,7 @@ local function BBUpdateBuffBar()
             else btn.count:Hide() end
             local tl = GetPlayerBuffTimeLeft(buffIndex)
             btn.timer:SetText((tl and tl > 0) and BBFmtTime(tl) or "")
-            btn.timer:SetTextColor(1, 1, 1, 1)
+            btn.timer:SetTextColor(1, (tl and tl < 60) and 1 or 1, (tl and tl < 60) and 0 or 1, 1)
         end
     end
     local buffLocked = db and db.buffBarLocked
@@ -733,11 +733,8 @@ local function BBRefreshBuffTimers()
         if btn.buffIndex >= 0 and not btn.untilCancelled then
             local tl = GetPlayerBuffTimeLeft(btn.buffIndex)
             if tl and tl > 0 then
-                local r = tl < 30 and 1 or 1
-                local g = tl < 30 and 0.4 or 1
-                local b = tl < 30 and 0 or 1
                 btn.timer:SetText(BBFmtTime(tl))
-                btn.timer:SetTextColor(r, g, b, 1)
+                btn.timer:SetTextColor(1, tl < 60 and 1 or 1, tl < 60 and 0 or 1, 1)
             else
                 btn.timer:SetText("")
             end
@@ -752,8 +749,7 @@ local function BBRefreshBuffTimers()
                 local tl = GetPlayerBuffTimeLeft(btn.buffIndex)
                 if tl and tl > 0 then
                     btn.timer:SetText(BBFmtTime(tl))
-                    btn.timer:SetTextColor(tl < 30 and 1 or 1, tl < 30 and 0.4 or 1,
-                                           tl < 30 and 0 or 1, 1)
+                    btn.timer:SetTextColor(1, tl < 60 and 1 or 1, tl < 60 and 0 or 1, 1)
                 else
                     btn.timer:SetText("")
                 end
@@ -963,9 +959,7 @@ local function BBUpdateWeaponBar()
         local sec = (expMs or 0) / 1000
         if sec > 0 then
             btn.timer:SetText(BBFmtTime(sec))
-            btn.timer:SetTextColor(sec < 30 and 1 or 1,
-                                   sec < 30 and 0.4 or 1,
-                                   sec < 30 and 0 or 1, 1)
+            btn.timer:SetTextColor(1, sec < 60 and 1 or 1, sec < 60 and 0 or 1, 1)
         else
             btn.timer:SetText("")
         end
