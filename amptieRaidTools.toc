@@ -19,6 +19,7 @@ components\raidassists.lua
 components\mtoverlay.lua
 components\itemchecks.lua
 components\buffchecks.lua
+components\buffbars.lua
 components\classbuffs.lua
 components\lootrules.lua
 components\qolsettings.lua
