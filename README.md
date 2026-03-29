@@ -133,7 +133,7 @@ For Hourglass Sand, the addon detects your Wardens of Time reputation — if you
 
 ### Raid Roles
 
-[Screenshot: Raid Roles tab showing the four-column roster]
+<img width="884" height="644" alt="image" src="https://github.com/user-attachments/assets/1741965d-53f6-466d-aeb8-67fb2b3108e7" />
 
 Raid Roles is a live roster that shows every player's detected spec and role. Columns are color-coded by broad role:
 
