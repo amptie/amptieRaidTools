@@ -21,7 +21,7 @@ local NAV_ITEM_HEIGHT = 24
 local NAV_PADDING   = 6
 
 local BACKDROP_MAIN = {
-	bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+	bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
 	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
 	tile = true, tileSize = 16, edgeSize = 16,
 	insets = { left = 4, right = 4, top = 4, bottom = 4 },
@@ -149,7 +149,7 @@ local function CreateMainFrame()
 	f:SetHeight(FRAME_HEIGHT)
 	f:SetPoint(DB.point, UIParent, DB.point, DB.x, DB.y)
 	f:SetBackdrop(BACKDROP_MAIN)
-	f:SetBackdropColor(0.08, 0.08, 0.1, 0.92)
+	f:SetBackdropColor(0.03, 0.03, 0.04, 0.9)
 	f:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
 	tinsert(UISpecialFrames, "AmptieRaidToolsMainFrame")
 
