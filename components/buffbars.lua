@@ -460,13 +460,6 @@ local function BBUpdateConsolidated()
     if not bbConFrame or not bbConFrame:IsShown() then return end
     local count, total = BBScanConsolidated()
     bbConFrame.countText:SetText(tostring(count))
-    if count == 0 then
-        bbConFrame.countText:SetTextColor(1, 0.3, 0.3, 1)
-    elseif count == total then
-        bbConFrame.countText:SetTextColor(0.3, 1.0, 0.3, 1)
-    else
-        bbConFrame.countText:SetTextColor(1, 0.82, 0, 1)
-    end
 
     if bbConHoverFrame and bbConHoverFrame:IsShown() then
         BBUpdateConHover()
@@ -570,24 +563,43 @@ local function BBCreateConsolidatedFrame()
     local icon = bbConFrame:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("TOPLEFT",     bbConFrame, "TOPLEFT",     BB_PAD, -BB_PAD)
     icon:SetPoint("BOTTOMRIGHT", bbConFrame, "BOTTOMRIGHT", -BB_PAD, BB_PAD)
-    icon:SetTexture("Interface\\Icons\\inv_misc_bag_felclothbag")
+    icon:SetTexture("Interface\\Icons\\inv_misc_enggizmos_21")
     icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     bbConFrame.mainIcon = icon
 
-    local ct = bbConFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    ct:SetPoint("TOPLEFT",  bbConFrame, "BOTTOMLEFT",  0, BB_TIMER_H)
-    ct:SetPoint("TOPRIGHT", bbConFrame, "BOTTOMRIGHT", 0, BB_TIMER_H)
-    ct:SetJustifyH("CENTER")
+    local ct = bbConFrame:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    ct:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 2, 2)
+    ct:SetTextColor(1, 1, 1, 1)
     ct:SetText("0")
     bbConFrame.countText = ct
 
     -- Invisible Button overlay covering the full icon area.
     -- Buttons have more reliable full-area mouse detection in WoW 1.12 than Frames.
-    -- All clicks and hover events go here; the parent Frame handles drag.
+    -- Drag is handled on hitBtn (not the parent Frame) because a child Button with
+    -- EnableMouse absorbs mouse-down before the parent Frame's RegisterForDrag fires.
     local hitBtn = CreateFrame("Button", nil, bbConFrame)
     hitBtn:SetAllPoints(bbConFrame)
     hitBtn:SetFrameLevel(bbConFrame:GetFrameLevel() + 2)
     hitBtn:RegisterForClicks("LeftButtonUp")
+    hitBtn:RegisterForDrag("LeftButton")
+    hitBtn:SetScript("OnDragStart", function()
+        local d = GetBBDB()
+        if d and not d.buffBarLocked then
+            bbConFrame:StartMoving()
+        end
+    end)
+    hitBtn:SetScript("OnDragStop", function()
+        bbConFrame:StopMovingOrSizing()
+        local d = GetBBDB()
+        if d then
+            local p, _, _, x, y = bbConFrame:GetPoint()
+            d.consolidatedPoint = p
+            d.consolidatedX = x
+            d.consolidatedY = y
+        end
+        -- Re-anchor buff bar to follow
+        BBUpdateConAnchor()
+    end)
 
     hitBtn:SetScript("OnClick", function()
         if not bbConExpFrame then BBCreateConsolidatedExpFrame() end
@@ -636,32 +648,55 @@ end
 
 local function BBCreateBuffBar()
     local db = GetBBDB()
+    -- Container: NO backdrop on the main frame. A child frame provides the backdrop
+    -- and is sized only to cover visible slots. The container itself is NEVER resized
+    -- based on content — this keeps the TOPRIGHT anchor stable in WoW 1.12.
     bbBuffFrame = CreateFrame("Frame", "ART_BB_BuffFrame", UIParent)
     bbBuffFrame:SetFrameStrata("MEDIUM")
     bbBuffFrame:SetMovable(true)
     bbBuffFrame:SetClampedToScreen(true)
-    bbBuffFrame:EnableMouse(true)
-    bbBuffFrame:SetBackdrop(BB_BD)
-    bbBuffFrame:SetBackdropColor(0, 0, 0, 0.7)
-    bbBuffFrame:SetBackdropBorderColor(0.3, 0.3, 0.35, 0.8)
+    bbBuffFrame:EnableMouse(false)  -- enabled only when content is visible
     bbBuffFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db and db.buffBarX or 0, db and db.buffBarY or -160)
     bbBuffFrame:RegisterForDrag("LeftButton")
     bbBuffFrame:SetScript("OnDragStart", function()
         local d = GetBBDB()
-        -- Buff bar is not independently draggable when consolidated controls it
-        if d and not d.buffBarLocked
-            and not (d.consolidatedEnabled and bbConFrame and bbConFrame:IsShown()) then
-            this:StartMoving()
+        if d and not d.buffBarLocked then
+            -- When consolidated is active, dragging the buff bar moves the consolidated frame
+            if d.consolidatedEnabled and bbConFrame and bbConFrame:IsShown() then
+                bbConFrame:StartMoving()
+            else
+                this:StartMoving()
+            end
         end
     end)
     bbBuffFrame:SetScript("OnDragStop", function()
-        this:StopMovingOrSizing()
         local d = GetBBDB()
-        if d and not (d.consolidatedEnabled and bbConFrame and bbConFrame:IsShown()) then
-            d.buffBarX = this:GetRight() - UIParent:GetRight()
-            d.buffBarY = this:GetTop()   - UIParent:GetTop()
+        if d and d.consolidatedEnabled and bbConFrame and bbConFrame:IsShown() then
+            bbConFrame:StopMovingOrSizing()
+            local p, _, _, x, y = bbConFrame:GetPoint()
+            if d then d.consolidatedPoint = p; d.consolidatedX = x; d.consolidatedY = y end
+            BBUpdateConAnchor()
+        else
+            this:StopMovingOrSizing()
+            if d then
+                d.buffBarX = this:GetRight() - UIParent:GetRight()
+                d.buffBarY = this:GetTop()   - UIParent:GetTop()
+            end
         end
     end)
+    -- Backdrop child: dynamically sized to cover only visible slots.
+    -- Its resize never affects the container's anchor.
+    local bBD = CreateFrame("Frame", nil, bbBuffFrame)
+    bBD:SetBackdrop(BB_BD)
+    bBD:SetBackdropColor(0, 0, 0, 0.7)
+    bBD:SetBackdropBorderColor(0.3, 0.3, 0.35, 0.8)
+    bBD:Hide()
+    bbBuffFrame.backdropChild = bBD
+    -- Initialize with a valid non-zero size
+    local initSz = (db and db.buffIconSz) or BB_ICON_DEFAULT
+    local initPR = (db and db.buffBarNumPerRow) or 16
+    bbBuffFrame:SetWidth(mmin(BB_MAX_BUFFS, initPR) * (initSz + BB_PAD) + BB_PAD * 2)
+    bbBuffFrame:SetHeight(initSz + BB_TIMER_H + BB_PAD * 2 + BB_PAD)
     bbBuffFrame:Hide()
     for i = 1, BB_MAX_BUFFS do
         local btn = BBMakeIconBtn(bbBuffFrame, i - 1)
@@ -674,15 +709,18 @@ end
 
 local function BBUpdateBuffBar()
     if not bbBuffFrame or not bbBuffFrame:IsShown() then return end
-    local db = GetBBDB()
-    local hideCon = db and db.hideConsolidatedInBar
+    local db      = GetBBDB()
+    -- hideCon only applies when consolidated is actually enabled
+    local hideCon = db and db.consolidatedEnabled and db.hideConsolidatedInBar
     local conSet  = {}
     if hideCon and db and db.consolidatedList then
         for i = 1, getn(db.consolidatedList) do conSet[db.consolidatedList[i]] = true end
     end
-    local iconSz  = (db and db.buffIconSz)  or BB_ICON_DEFAULT
-    local perRow  = (db and db.buffBarNumPerRow) or 16
-    local visible = 0
+    local iconSz     = (db and db.buffIconSz)       or BB_ICON_DEFAULT
+    local perRow     = (db and db.buffBarNumPerRow)  or 16
+    local buffLocked = db and db.buffBarLocked
+    local stepH      = iconSz + BB_PAD
+    local visible    = 0
     for slot = 0, BB_MAX_BUFFS - 1 do
         local buffIndex, untilCancelled = GetPlayerBuff(slot, "HELPFUL")
         if buffIndex < 0 then break end
@@ -706,22 +744,41 @@ local function BBUpdateBuffBar()
             btn.timer:SetTextColor(1, (tl and tl < 60) and 1 or 1, (tl and tl < 60) and 0 or 1, 1)
         end
     end
-    local buffLocked = db and db.buffBarLocked
-    if buffLocked and visible == 0 then
-        for i = 1, BB_MAX_BUFFS do bbBuffBtns[i]:Hide() end
-        bbBuffFrame:SetAlpha(0)
-        if bbConFrame then
-            bbConFrame:SetWidth(iconSz + BB_PAD * 2)
-            bbConFrame:SetHeight(iconSz + BB_PAD * 2)
-        end
-        return
-    end
-    local displayCount = (not buffLocked) and BB_MAX_BUFFS or visible
-    BBLayout(bbBuffBtns, perRow, visible, iconSz, displayCount, true)
     -- Resize consolidated to match icon size
     if bbConFrame then
         bbConFrame:SetWidth(iconSz + BB_PAD * 2)
         bbConFrame:SetHeight(iconSz + BB_PAD * 2)
+    end
+    -- ALWAYS call BBLayout with BB_MAX_BUFFS so the container frame never shrinks.
+    -- This prevents TOPRIGHT anchor drift in WoW 1.12.
+    BBLayout(bbBuffBtns, perRow, visible, iconSz, BB_MAX_BUFFS, true)
+    -- In locked mode: hide preview slots — only real buffs are shown.
+    if buffLocked then
+        for i = visible + 1, BB_MAX_BUFFS do bbBuffBtns[i]:Hide() end
+    end
+    local bBD = bbBuffFrame.backdropChild
+    if buffLocked and visible == 0 then
+        -- Nothing to show: invisible + non-interactive
+        bbBuffFrame:SetAlpha(0)
+        bbBuffFrame:EnableMouse(false)
+        if bBD then bBD:Hide() end
+        return
+    end
+    -- Size backdrop child to cover only the displayed slots.
+    -- The child's resize never touches the container → no anchor drift.
+    bbBuffFrame:SetAlpha(1)
+    bbBuffFrame:EnableMouse(true)
+    if bBD then
+        local dispSlots = buffLocked and visible or BB_MAX_BUFFS
+        local dispCols  = mmin(dispSlots, perRow)
+        local dispRows  = mceil(dispSlots / perRow)
+        local bdW = dispCols * stepH + BB_PAD
+        local bdH = dispRows * (iconSz + BB_PAD) + BB_PAD * 2
+        bBD:ClearAllPoints()
+        bBD:SetPoint("TOPRIGHT", bbBuffFrame, "TOPRIGHT", -BB_PAD, 0)
+        bBD:SetWidth(bdW)
+        bBD:SetHeight(bdH)
+        bBD:Show()
     end
 end
 
