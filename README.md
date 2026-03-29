@@ -3,7 +3,7 @@
 
 A modular raid management addon for **TurtleWoW** (Vanilla 1.12). Designed for 40-man raiding, it combines spec tracking, buff verification, cooldown management, loot council, and a variety of quality-of-life tools in a single unified interface with a collapsible navigation sidebar.
 
-Requires **SuperWoW**.
+Some Features require **SuperWoW**.
 
 ---
 
@@ -53,8 +53,6 @@ Requires **SuperWoW**.
 
 ## Interface Overview
 
-[Screenshot: Main frame with navbar on the left and content panel on the right]
-
 The main frame (780 × 570 px) has a vertical navigation sidebar on the left. Clicking any nav item switches the content panel on the right. The frame is draggable and remembers its position between sessions.
 
 The navbar is organized into four sections: **Character**, **Raids**, **Rules**, and **Others**.
@@ -65,7 +63,8 @@ The navbar is organized into four sections: **Character**, **Raids**, **Rules**,
 
 ### Overview
 
-[Screenshot: Overview tab]
+<img width="883" height="648" alt="image" src="https://github.com/user-attachments/assets/c7b988ad-72f7-4b64-bbb2-b68ef23fb375" />
+
 
 The Overview tab is your character dashboard. It displays:
 
@@ -87,7 +86,7 @@ The Overview tab is your character dashboard. It displays:
 
 ### Bar Profiles
 
-[Screenshot: Bar Profiles tab]
+<img width="886" height="645" alt="image" src="https://github.com/user-attachments/assets/05f48fff-f051-4684-a104-cba3d4a5ccf3" />
 
 Bar Profiles manages named presets for the Buff Bars overlay. Each profile can be bound to a specific specialization, so the bars automatically switch when your spec changes (e.g., show different tracked auras while tanking vs. healing).
 
@@ -97,11 +96,15 @@ Profiles can be created, renamed, deleted, and exported/imported as strings for 
 
 ### Auto-Buffs
 
-[Screenshot: Auto-Buffs tab showing buff categories]
+<img width="887" height="645" alt="image" src="https://github.com/user-attachments/assets/35f99d62-e58b-4a33-beea-3cd50450d14a" />
 
 Auto-Buffs automatically removes unwanted buffs from your character based on the active profile. This is useful for stripping low-rank world buffs before getting properly buffed for raid.
 
 Buffs are organized into categories (Scrolls, Paladin blessings, Priest buffs, Mage buffs, Druid buffs, etc.). Within each category you enable or disable individual buff names. The system continuously checks your buff list and cancels any enabled entries.
+
+You can bind your profiles to specs when you scroll down in the Auto-Buffs Frame. You can also choose to have it linked to the spec only inside raid-dungeons.
+
+<img width="888" height="648" alt="image" src="https://github.com/user-attachments/assets/499f4f1d-b760-479a-8912-cd0f4c7d94e2" />
 
 > **Note:** The Blessing of Salvation setting on the Overview tab (Salvation Override) takes precedence over the Auto-Buffs profile for Salvation specifically.
 
@@ -109,7 +112,7 @@ Buffs are organized into categories (Scrolls, Paladin blessings, Priest buffs, M
 
 ### Auto-Rolls
 
-[Screenshot: Auto-Rolls tab showing item group list]
+<img width="884" height="644" alt="image" src="https://github.com/user-attachments/assets/1c446be2-c44c-4607-96fe-5b5ceaa4b468" />
 
 Auto-Rolls watches for loot roll popups and automatically rolls Need, Greed, or Pass on specific item categories. For each category you select one of: **None** (no auto-roll), **Need**, **Greed**, or **Pass**.
 
@@ -151,7 +154,7 @@ The roster is populated by listening to spec broadcasts from other players runni
 
 ### Raid Assist
 
-[Screenshot: Raid Assist tab showing MT fields, auto-invite, auto-assist sections]
+<img width="885" height="648" alt="image" src="https://github.com/user-attachments/assets/d6144f75-4884-4286-8858-c5fa4a414ef2" />
 
 Raid Assist has three independent features:
 
@@ -176,7 +179,7 @@ A name list — if a player on this list joins your raid, they are automatically
 
 ### Raid CDs
 
-[Screenshot: Raid CDs tab with spell checkboxes and overlay preview]
+<img width="882" height="646" alt="image" src="https://github.com/user-attachments/assets/a3e0dab8-5c1c-4c64-8bd6-1599fa73bffb" />
 
 Raid CDs tracks the cooldowns of important raid utility spells for all players in your raid. Detection uses SuperWoW's addon messaging — players broadcast their cooldown usage automatically when running amptieRaidTools.
 
@@ -202,7 +205,7 @@ The tab also contains the **Taunt Tracker** section — see [Overlays](#overlays
 
 ### Raid Setups
 
-[Screenshot: Raid Setups tab showing 8 group grid]
+<img width="887" height="646" alt="image" src="https://github.com/user-attachments/assets/3206e412-8f70-46b6-b220-da475557e2b3" />
 
 Raid Setups is a visual composition planner. It displays a grid of 8 groups with 5 slots each (40 total), where you manually type player names for your planned raid composition.
 
@@ -219,7 +222,7 @@ This is a planning tool only — it does not auto-assign players to groups.
 
 ### Item Checks
 
-[Screenshot: Item Checks tab with profile list on left and rule list on right]
+<img width="886" height="650" alt="image" src="https://github.com/user-attachments/assets/06dc673c-af2e-47ea-877f-b217eda48f72" />
 
 Item Checks verifies that raid members are carrying the correct consumables and resistance items. A raid leader broadcasts a check, and all addons respond with their inventory counts. Results are collected and displayed in the overlay.
 
@@ -239,7 +242,7 @@ Item Checks verifies that raid members are carrying the correct consumables and 
 - Oils and stones (Brilliant Wizard Oil, Dense Sharpening Stone, etc.)
 - Runes (Rune of the Dawn, etc.)
 
-[Screenshot: Item Checks rule editor]
+<img width="885" height="644" alt="image" src="https://github.com/user-attachments/assets/e8393f54-4d04-4546-814c-91bddbc2a6fd" />
 
 **From IC Profile** — Buff Checks can optionally import rules from an Item Checks profile, avoiding duplication.
 
@@ -262,7 +265,7 @@ Available buffs span hundreds of entries: world buffs, consumable buffs, class b
 
 The **rule editor** opens within the rules panel when you click **+ Add Rule** or **Edit** on an existing rule.
 
-[Screenshot: Buff Checks rule editor with WHO header and scrollable conditions]
+<img width="882" height="639" alt="image" src="https://github.com/user-attachments/assets/95d55617-befe-40db-96f6-f341b8748fab" />
 
 **Overlay** — when a check is running, the overlay shows which players are failing which rules. It auto-shows when failures are detected and auto-hides when all players pass. The overlay is only visible while in a raid.
 
@@ -272,7 +275,7 @@ The **rule editor** opens within the rules panel when you click **+ Add Rule** o
 
 ### Class Buffs
 
-[Screenshot: Class Buffs tab showing buff group list with toggles]
+<img width="887" height="646" alt="image" src="https://github.com/user-attachments/assets/3180c551-b9c5-4247-aec4-f14f86fa6ad6" />
 
 Class Buffs tracks which raid members are missing standard class-provided buffs. Unlike Buff Checks (which requires a manual check broadcast), Class Buffs runs continuously by scanning all visible unit auras.
 
@@ -314,7 +317,7 @@ Loot Rules is a full in-game loot council system. When a loot window opens, a **
 - **Officers** — named players with voting authority
 - **Zone Bindings** — bind a profile to a raid zone so it activates automatically
 
-[Screenshot: Loot council popup frame showing item, voter list, and vote buttons]
+<img width="885" height="642" alt="image" src="https://github.com/user-attachments/assets/f789e165-b415-4d42-b8fb-96cdf405d8ce" />
 
 **Council frame** — a separate movable window (also accessible via `/art council show`) shows each officer's vote in real time, sortable by priority, roll, name, class, or DKP value.
 
@@ -328,7 +331,7 @@ Profiles can be **exported and imported** as strings for sharing across officers
 
 ### NPC Trading
 
-[Screenshot: NPC Trading tab]
+<img width="880" height="638" alt="image" src="https://github.com/user-attachments/assets/0034c8d2-4665-4741-b85e-ee5127a92310" />
 
 NPC Trading automates vendor interactions when you open a merchant window.
 
@@ -347,7 +350,7 @@ Purchases are queued and executed with a small delay between each to avoid clien
 
 ### QoL Settings
 
-[Screenshot: QoL Settings tab with checkbox list]
+<img width="887" height="645" alt="image" src="https://github.com/user-attachments/assets/35c5cfba-51dc-4ef8-b9fc-b9fa3994d3b6" />
 
 QoL Settings provides individual toggles for convenience features unrelated to raiding:
 
@@ -410,7 +413,6 @@ Shows players failing active Buff Check rules. Auto-shows when failures are dete
 ## About
 
 **Addon:** amptieRaidTools
-**Version:** 0.8.2
 **Author:** amptie
 **Server:** Nordanaar (TurtleWoW)
 **Character:** Celebrindal
