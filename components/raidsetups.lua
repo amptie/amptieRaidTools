@@ -366,7 +366,7 @@ function AmptieRaidTools_InitRaidSetups(body)
 	ddBtn.fs:SetJustifyH("LEFT")
 
 	-- ── Profile dropdown ───────────────────────────────────────
-	local ddFrame = CreateFrame("Frame", "ART_RS_DDFrame", panel)
+	local ddFrame = CreateFrame("Frame", "ART_RS_DDFrame", UIParent)
 	ddFrame:SetFrameStrata("TOOLTIP")
 	ddFrame:SetWidth(155)
 	ddFrame:SetBackdrop({

@@ -320,9 +320,6 @@ end
 local function BBBuildConHoverFrame()
     bbConHoverFrame = CreateFrame("Frame", "ART_BB_ConHoverFrame", UIParent)
     bbConHoverFrame:SetFrameStrata("HIGH")
-    bbConHoverFrame:SetBackdrop(BB_BD)
-    bbConHoverFrame:SetBackdropColor(0, 0, 0, 0.92)
-    bbConHoverFrame:SetBackdropBorderColor(1, 0.82, 0, 0.8)
     bbConHoverFrame:EnableMouse(true)
     bbConHoverFrame:SetScript("OnEnter", function() BBConCancelHide() end)
     bbConHoverFrame:SetScript("OnLeave", function() BBConStartHide()  end)
@@ -372,20 +369,29 @@ local function BBUpdateConHover()
     local list   = db.consolidatedList
     for i = 1, getn(list) do conSet[list[i]] = true end
 
-    -- Collect active consolidated buffs
-    local active = {}
+    -- Pre-scan: collect all helpful buff data in one pass, resolving names via the
+    -- scan tooltip before any filtering. This avoids calling SetPlayerBuff inside the
+    -- active-buff collection loop, which can disturb aura query ordering in WoW 1.12.
+    local helpful = {}
     for slot = 0, BB_MAX_BUFFS - 1 do
         local buffIndex, untilCancelled = GetPlayerBuff(slot, "HELPFUL")
         if buffIndex < 0 then break end
-        local name = BBGetPlayerBuffName(slot)
-        if name and conSet[name] then
-            tinsert(active, {
-                buffIndex      = buffIndex,
-                untilCancelled = untilCancelled,
-                tex            = GetPlayerBuffTexture(buffIndex),
-                apps           = GetPlayerBuffApplications(buffIndex),
-                timeLeft       = GetPlayerBuffTimeLeft(buffIndex),
-            })
+        tinsert(helpful, {
+            buffIndex      = buffIndex,
+            untilCancelled = untilCancelled,
+            tex            = GetPlayerBuffTexture(buffIndex),
+            apps           = GetPlayerBuffApplications(buffIndex),
+            timeLeft       = GetPlayerBuffTimeLeft(buffIndex),
+            name           = BBGetPlayerBuffName(slot),
+        })
+    end
+
+    -- Filter to consolidated list
+    local active = {}
+    for i = 1, getn(helpful) do
+        local h = helpful[i]
+        if h.name and conSet[h.name] then
+            tinsert(active, h)
         end
     end
 
@@ -684,14 +690,7 @@ local function BBCreateBuffBar()
             end
         end
     end)
-    -- Backdrop child: dynamically sized to cover only visible slots.
-    -- Its resize never affects the container's anchor.
-    local bBD = CreateFrame("Frame", nil, bbBuffFrame)
-    bBD:SetBackdrop(BB_BD)
-    bBD:SetBackdropColor(0, 0, 0, 0.7)
-    bBD:SetBackdropBorderColor(0.3, 0.3, 0.35, 0.8)
-    bBD:Hide()
-    bbBuffFrame.backdropChild = bBD
+    -- No backdrop on the buff bar — icons float without a background box.
     -- Initialize with a valid non-zero size
     local initSz = (db and db.buffIconSz) or BB_ICON_DEFAULT
     local initPR = (db and db.buffBarNumPerRow) or 16
@@ -719,7 +718,6 @@ local function BBUpdateBuffBar()
     local iconSz     = (db and db.buffIconSz)       or BB_ICON_DEFAULT
     local perRow     = (db and db.buffBarNumPerRow)  or 16
     local buffLocked = db and db.buffBarLocked
-    local stepH      = iconSz + BB_PAD
     local visible    = 0
     for slot = 0, BB_MAX_BUFFS - 1 do
         local buffIndex, untilCancelled = GetPlayerBuff(slot, "HELPFUL")
@@ -756,30 +754,13 @@ local function BBUpdateBuffBar()
     if buffLocked then
         for i = visible + 1, BB_MAX_BUFFS do bbBuffBtns[i]:Hide() end
     end
-    local bBD = bbBuffFrame.backdropChild
     if buffLocked and visible == 0 then
-        -- Nothing to show: invisible + non-interactive
         bbBuffFrame:SetAlpha(0)
         bbBuffFrame:EnableMouse(false)
-        if bBD then bBD:Hide() end
         return
     end
-    -- Size backdrop child to cover only the displayed slots.
-    -- The child's resize never touches the container → no anchor drift.
     bbBuffFrame:SetAlpha(1)
     bbBuffFrame:EnableMouse(true)
-    if bBD then
-        local dispSlots = buffLocked and visible or BB_MAX_BUFFS
-        local dispCols  = mmin(dispSlots, perRow)
-        local dispRows  = mceil(dispSlots / perRow)
-        local bdW = dispCols * stepH + BB_PAD
-        local bdH = dispRows * (iconSz + BB_PAD) + BB_PAD * 2
-        bBD:ClearAllPoints()
-        bBD:SetPoint("TOPRIGHT", bbBuffFrame, "TOPRIGHT", -BB_PAD, 0)
-        bBD:SetWidth(bdW)
-        bBD:SetHeight(bdH)
-        bBD:Show()
-    end
 end
 
 local function BBRefreshBuffTimers()
@@ -873,26 +854,37 @@ local function BBUpdateDebuffBar()
     local locked = db and db.debuffBarLocked
     local stepH  = iconSz + BB_PAD
 
-    local visible = 0
-    for slot = 1, BB_MAX_DEBUFFS do
-        local tex, apps, dtype = UnitDebuff("player", slot)
+    -- Pre-scan UnitDebuff for debuff type (needed for border colour).
+    -- UnitDebuff and GetPlayerBuff(N,"HARMFUL") can return debuffs in different
+    -- orders, so we decouple them: type is looked up by texture path after the fact.
+    local typeByTex = {}
+    for s = 1, BB_MAX_DEBUFFS do
+        local tex, _, dtype = UnitDebuff("player", s)
         if not tex then break end
-        -- GetPlayerBuff(slot-1, "HARMFUL") returns buffIndex; GetPlayerBuffTimeLeft needs it.
-        -- UnitDebuff returns no duration/timeLeft in WoW 1.12 — only tex/stacks/debuffType.
-        local buffIndex = GetPlayerBuff(slot - 1, "HARMFUL")
-        local timeLeft  = (buffIndex >= 0) and GetPlayerBuffTimeLeft(buffIndex) or nil
+        if dtype and not typeByTex[tex] then typeByTex[tex] = dtype end
+    end
+
+    -- Main loop: drive by GetPlayerBuff so buffIndex always matches what is
+    -- passed to GameTooltip:SetPlayerBuff and GetPlayerBuffTimeLeft.
+    local visible = 0
+    for i = 0, BB_MAX_DEBUFFS - 1 do
+        local buffIndex = GetPlayerBuff(i, "HARMFUL")
+        if buffIndex < 0 then break end
+        local tex      = GetPlayerBuffTexture(buffIndex)
+        local timeLeft = GetPlayerBuffTimeLeft(buffIndex)
+        local apps     = GetPlayerBuffApplications(buffIndex)
         visible = visible + 1
         local btn = bbDebuffBtns[visible]
         btn.buffIndex = buffIndex
         btn.icon:SetTexture(tex)
-        local col = (dtype and BB_DEBUFF_COL[dtype]) or BB_DEBUFF_COL_NONE
+        local dtype = tex and typeByTex[tex]
+        local col   = (dtype and BB_DEBUFF_COL[dtype]) or BB_DEBUFF_COL_NONE
         btn.border:SetVertexColor(col.r, col.g, col.b, 1)
         btn.border:Show()
         if apps and apps > 1 then btn.count:SetText(apps); btn.count:Show()
         else btn.count:Hide() end
         if timeLeft and timeLeft > 0 then
             btn.timer:SetText(BBFmtTime(timeLeft))
-            -- Yellow once the timer drops to seconds-only display (< 60s)
             if timeLeft < 60 then
                 btn.timer:SetTextColor(1, 1, 0, 1)
             else
