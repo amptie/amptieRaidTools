@@ -324,7 +324,7 @@ end
 -- UI
 -- ============================================================
 local ART_BP_SPECS_BY_CLASS = {
-	WARRIOR = { "Arms", "Fury Sweeping Strikes", "Fury", "Fury Protection", "Protection", "Deep Protection" },
+	WARRIOR = { "Arms", "Fury Sweeping Strikes", "Fury", "Fury Two-Handed", "Fury Protection", "Protection", "Deep Protection" },
 	PALADIN = { "Shockadin", "Retribution", "Holy", "Protection" },
 	MAGE    = { "Arcane", "Fire", "Frost" },
 	DRUID   = { "Balance", "Feral Cat", "Feral Bear", "Restoration" },

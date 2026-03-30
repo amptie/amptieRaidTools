@@ -210,11 +210,13 @@ function AmptieRaidTools_InitHome(body)
 		local r2_17 = GetTalentRankHere(2, 17)
 		local r3_19 = GetTalentRankHere(3, 19)
 		local r1_11 = GetTalentRankHere(1, 11)
+		local r1_10 = GetTalentRankHere(1, 10)
 		local r2_15 = GetTalentRankHere(2, 15)
 		local r1_13 = GetTalentRankHere(1, 13)
 		local r1_18 = GetTalentRankHere(1, 18)
 		if r3_12 == 5 and r2_17 == 1 then return "Fury Protection" end
 		if r3_19 == 1 then return "Deep Protection" end
+		if r2_17 == 1 and r1_10 == 3 then return "Fury Two-Handed" end
 		if r2_17 == 1 and r1_11 == 2 then return "Fury" end
 		if r2_15 == 5 and r1_13 == 1 then return "Fury Sweeping Strikes" end
 		if r1_18 == 1 then return "Arms" end
