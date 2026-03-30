@@ -32,6 +32,8 @@ local ITEM_IDS = {
 	["Wild Thornroot"] = 17026,
 	["Ironwood Seed"] = 17038,
 	["Flash Powder"] = 5140,
+	["Demonic Figurine"] = 16583,
+	["Infernal Stone"] = 5565,
 }
 
 -- Item-ID aus Link extrahieren (|Hitem:12345:...|h)
@@ -240,9 +242,9 @@ end
 -- Lokalisierter Klassenname → Token (en: "Mage", de: "Magier" etc.)
 local LOCALIZED_CLASS_TO_TOKEN = {
 	["Paladin"] = "PALADIN", ["Shaman"] = "SHAMAN", ["Mage"] = "MAGE", ["Priest"] = "PRIEST", ["Druid"] = "DRUID",
-	["Rogue"]   = "ROGUE",   ["Warrior"] = "WARRIOR",
+	["Rogue"]   = "ROGUE",   ["Warrior"] = "WARRIOR", ["Warlock"] = "WARLOCK",
 	["Schamane"] = "SHAMAN", ["Magier"] = "MAGE", ["Priester"] = "PRIEST", ["Druide"] = "DRUID",
-	["Schurke"] = "ROGUE",   ["Krieger"] = "WARRIOR",
+	["Schurke"] = "ROGUE",   ["Krieger"] = "WARRIOR", ["Hexenmeister"] = "WARLOCK",
 }
 
 -- Klassenmaterialien pro Klasse (Token)
@@ -260,8 +262,12 @@ local CLASS_MATERIALS = {
 		{ name = "Wild Thornroot" },
 		{ name = "Ironwood Seed" },
 	},
-	ROGUE   = {
+	ROGUE    = {
 		{ name = "Flash Powder" },
+	},
+	WARLOCK  = {
+		{ name = "Demonic Figurine" },
+		{ name = "Infernal Stone" },
 	},
 }
 
