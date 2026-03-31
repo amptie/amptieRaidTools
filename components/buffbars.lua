@@ -97,6 +97,8 @@ local function GetBBDB()
     if db.weaponBarX       == nil then db.weaponBarX       = 0     end
     if db.weaponBarY       == nil then db.weaponBarY       = -240  end
     if db.weaponIconSz     == nil then db.weaponIconSz     = BB_ICON_DEFAULT end
+    -- Persistent Blizzard buff frame suppression (independent of aRT bars)
+    if db.hideBlizzBuffFrame == nil then db.hideBlizzBuffFrame = false end
     return db
 end
 
@@ -1096,8 +1098,8 @@ end
 
 local function BBRestoreBlizzBuffFrame()
     local db = GetBBDB()
-    -- Only restore if neither buff nor debuff bar is active
-    if db and (db.buffBarEnabled or db.debuffBarEnabled) then return end
+    -- Only restore if neither buff nor debuff bar is active AND persistent hide is off
+    if db and (db.buffBarEnabled or db.debuffBarEnabled or db.hideBlizzBuffFrame) then return end
     if BuffFrame then
         for i = 0, 23 do
             local btn = getglobal("BuffButton" .. i)
@@ -1428,6 +1430,10 @@ function AmptieRaidTools_InitBuffBars()
     if db.debuffBarEnabled    then BBShowDebuffBar(true)    end
     if db.weaponBarEnabled    then BBShowWeaponBar(true)    end
     if db.consolidatedEnabled then BBShowConsolidated(true) end
+    -- Apply persistent Blizzard buff frame suppression if enabled but no aRT bars active
+    if db.hideBlizzBuffFrame and not db.buffBarEnabled and not db.debuffBarEnabled then
+        BBSuppressBlizzBuffFrame()
+    end
 end
 
 -- ============================================================
@@ -1684,6 +1690,29 @@ function ART_BB_BuildSettingsSection(panel, anchor)
             end
         end)
 
+    -- ── Misc ──────────────────────────────────────────────────
+    local divMisc = MakeDivider(lastAnchor, -10)
+    local hdrMisc = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdrMisc:SetPoint("TOPLEFT", divMisc, "BOTTOMLEFT", 0, -8)
+    hdrMisc:SetText("Miscellaneous")
+    hdrMisc:SetTextColor(1, 0.82, 0, 1)
+    lastAnchor = hdrMisc
+    firstRow = true
+
+    local rowHideBlizz = NextRow(ROW_H)
+    local cbHideBlizz = ART_CreateCheckbox(rowHideBlizz, "Hide Blizzard Buff Bars")
+    cbHideBlizz:SetPoint("LEFT", rowHideBlizz, "LEFT", COL_CB, 0)
+    cbHideBlizz:SetChecked(db and db.hideBlizzBuffFrame)
+    cbHideBlizz.userOnClick = function()
+        local d = GetBBDB(); if not d then return end
+        d.hideBlizzBuffFrame = cbHideBlizz:GetChecked() and true or false
+        if d.hideBlizzBuffFrame then
+            BBSuppressBlizzBuffFrame()
+        else
+            BBRestoreBlizzBuffFrame()
+        end
+    end
+
     -- Refresh callback for panel OnShow
     return function()
         local d = GetBBDB(); if not d then return end
@@ -1691,6 +1720,7 @@ function ART_BB_BuildSettingsSection(panel, anchor)
         cbBuff:SetChecked(d.buffBarEnabled)
         cbDebuff:SetChecked(d.debuffBarEnabled)
         cbWeapon:SetChecked(d.weaponBarEnabled)
+        cbHideBlizz:SetChecked(d.hideBlizzBuffFrame)
         sliderBuffSz:SetVal(d.buffIconSz or BB_ICON_DEFAULT)
         sliderBuffRow:SetVal(d.buffBarNumPerRow or 16)
         sliderDebuffSz:SetVal(d.debuffIconSz or BB_ICON_DEFAULT)
