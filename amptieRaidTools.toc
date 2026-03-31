@@ -2,7 +2,7 @@
 ## Title: amptieRaidTools
 ## Notes: Raid-Tools mit Navbar und Komponenten (TurtleWoW 1.12)
 ## Author: amptie
-## Version: 0.9.0
+## Version: 0.9.1
 ## SavedVariablesPerCharacter: amptieRaidToolsDB, ART_BuffsList, ART_Profiles, ART_ActiveProfileName, ART_SpecBindings, ART_BarProfiles, ART_ActiveBarProfileName, ART_BarSpecBindings, ART_SalvationOverride, ART_RaidCDs
 
 main.lua
