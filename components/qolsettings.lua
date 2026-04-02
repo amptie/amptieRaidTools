@@ -713,14 +713,16 @@ end
 QuestFrameGreetingPanel_OnShow = QR_PostHook(QuestFrameGreetingPanel_OnShow, QR_QuestFrameGreetingPanel_OnShow)
 
 -- ============================================================
--- BG leave timer: set when BG-end signal received, fired 0.5s later
-local bgLeaveAt = 0
+-- BG leave: poll every second while inside a BG.
+-- No reliance on specific event timing or localised "wins!" message text.
+local bgLeavePoll = 0
 local qolBgLeaveFrame = CreateFrame("Frame", nil, UIParent)
 qolBgLeaveFrame:SetScript("OnUpdate", function()
-    if bgLeaveAt == 0 then return end
-    if GetTime() < bgLeaveAt then return end
-    bgLeaveAt = 0
+    local t = GetTime()
+    if t < bgLeavePoll then return end
+    bgLeavePoll = t + 1
     if not QDB("LBG") then return end
+    if not QoL_IsInBG() then return end
     if GetBattlefieldWinner() ~= nil then
         LeaveBattlefield()
     end
@@ -736,9 +738,6 @@ qolEventFrame:RegisterEvent("RESURRECT_REQUEST")
 qolEventFrame:RegisterEvent("CONFIRM_SUMMON")
 qolEventFrame:RegisterEvent("DUEL_REQUESTED")
 qolEventFrame:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
-qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_NEUTRAL")
-qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_ALLIANCE")
-qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_HORDE")
 qolEventFrame:RegisterEvent("PLAYER_DEAD")
 qolEventFrame:RegisterEvent("BATTLEFIELDS_SHOW")
 qolEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
@@ -848,19 +847,7 @@ qolEventFrame:SetScript("OnEvent", function()
                 AcceptBattlefieldPort(i, 1)
             end
         end
-        -- Schedule a leave check only while inside a BG and no check already pending.
-        -- UPDATE_BATTLEFIELD_STATUS fires constantly in queue — don't reset a pending timer.
-        if db.LBG and bgLeaveAt == 0 and QoL_IsInBG() then
-            bgLeaveAt = GetTime() + 0.5
-        end
-
-    elseif evt == "CHAT_MSG_BG_SYSTEM_NEUTRAL"
-        or evt == "CHAT_MSG_BG_SYSTEM_ALLIANCE"
-        or evt == "CHAT_MSG_BG_SYSTEM_HORDE" then
-        -- Only react to the "X wins!" end-of-BG message (LazyPig pattern)
-        if QDB("LBG") and a1 and strfind(a1, "wins!") and bgLeaveAt == 0 then
-            bgLeaveAt = GetTime() + 0.5
-        end
+        -- LBG is handled by the polling frame; no timer logic needed here.
 
     elseif evt == "CHAT_MSG_SYSTEM" then
         -- Leader Queue Announce: forward "Queued for X" system message to raid/party (LazyPig AQUE)
@@ -879,12 +866,15 @@ qolEventFrame:SetScript("OnEvent", function()
         end
 
     elseif evt == "BATTLEFIELDS_SHOW" then
-        -- Re-queue after leaving BG: auto-join queue when BF window opens (LazyPig QBG)
+        -- Re-queue: auto-join when the BF window opens (LazyPig QBG)
         if QDB("QBG") then
             if (GetNumPartyMembers() > 0 or GetNumRaidMembers() > 0) and IsPartyLeader() then
                 JoinBattlefield(0, 1)
             else
                 JoinBattlefield(0)
+            end
+            if BattlefieldFrameCancelButton then
+                BattlefieldFrameCancelButton:Click()
             end
         end
 
