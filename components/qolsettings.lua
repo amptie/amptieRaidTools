@@ -53,12 +53,8 @@ end
 -- Zone / instance helpers
 -- ============================================================
 local function QoL_IsInBG()
-    local zone = GetRealZoneText()
-    if not zone then return false end
-    return (strfind(zone, "Alterac Valley") or strfind(zone, "Warsong Gulch") or
-            strfind(zone, "Arathi Basin") or strfind(zone, "Eye of the Storm") or
-            strfind(zone, "Strand of the Ancients") or strfind(zone, "Isle of Conquest"))
-            and true or false
+    local inInstance, instanceType = IsInInstance()
+    return inInstance and instanceType == "pvp" and true or false
 end
 
 local function QoL_IsDungeon()
@@ -743,6 +739,9 @@ qolEventFrame:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
 qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_NEUTRAL")
 qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_ALLIANCE")
 qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_HORDE")
+qolEventFrame:RegisterEvent("PLAYER_DEAD")
+qolEventFrame:RegisterEvent("BATTLEFIELDS_SHOW")
+qolEventFrame:RegisterEvent("CHAT_MSG_SYSTEM")
 qolEventFrame:RegisterEvent("GOSSIP_SHOW")
 qolEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 qolEventFrame:RegisterEvent("ZONE_CHANGED")
@@ -849,14 +848,45 @@ qolEventFrame:SetScript("OnEvent", function()
                 AcceptBattlefieldPort(i, 1)
             end
         end
-        -- Schedule a leave check — winner may not be set yet when this event fires
-        if db.LBG then bgLeaveAt = GetTime() + 0.5 end
+        -- Schedule a leave check only while inside a BG and no check already pending.
+        -- UPDATE_BATTLEFIELD_STATUS fires constantly in queue — don't reset a pending timer.
+        if db.LBG and bgLeaveAt == 0 and QoL_IsInBG() then
+            bgLeaveAt = GetTime() + 0.5
+        end
 
     elseif evt == "CHAT_MSG_BG_SYSTEM_NEUTRAL"
         or evt == "CHAT_MSG_BG_SYSTEM_ALLIANCE"
         or evt == "CHAT_MSG_BG_SYSTEM_HORDE" then
-        -- "X wins!" system message is another reliable end-of-BG signal
-        if QDB("LBG") then bgLeaveAt = GetTime() + 0.5 end
+        -- Only react to the "X wins!" end-of-BG message (LazyPig pattern)
+        if QDB("LBG") and a1 and strfind(a1, "wins!") and bgLeaveAt == 0 then
+            bgLeaveAt = GetTime() + 0.5
+        end
+
+    elseif evt == "CHAT_MSG_SYSTEM" then
+        -- Leader Queue Announce: forward "Queued for X" system message to raid/party (LazyPig AQUE)
+        if QDB("AQUE") and a1 and strfind(a1, "Queued") and UnitIsPartyLeader("player") then
+            if GetNumRaidMembers() > 0 then
+                SendChatMessage(a1, "RAID")
+            elseif GetNumPartyMembers() > 1 then
+                SendChatMessage(a1, "PARTY")
+            end
+        end
+
+    elseif evt == "PLAYER_DEAD" then
+        -- Auto-release spirit in battleground (LazyPig RBG)
+        if QDB("RBG") and QoL_IsInBG() then
+            RepopMe()
+        end
+
+    elseif evt == "BATTLEFIELDS_SHOW" then
+        -- Re-queue after leaving BG: auto-join queue when BF window opens (LazyPig QBG)
+        if QDB("QBG") then
+            if (GetNumPartyMembers() > 0 or GetNumRaidMembers() > 0) and IsPartyLeader() then
+                JoinBattlefield(0, 1)
+            else
+                JoinBattlefield(0)
+            end
+        end
 
     elseif evt == "GOSSIP_SHOW" then
         QoL_HandleGossip()
@@ -904,14 +934,17 @@ end)
 
 -- ============================================================
 -- StaticPopup hook: block BG quest share
+-- In WoW 1.12 a shared quest opens a "QUEST_ACCEPT" popup (LazyPig pattern).
+-- We skip the original call when blocking to prevent the dialog flashing.
 -- ============================================================
 local _OrigStaticPopupOnShow = StaticPopup_OnShow
 StaticPopup_OnShow = function(dialog)
-    if _OrigStaticPopupOnShow then _OrigStaticPopupOnShow(dialog) end
-    if not QDB("SBG") then return end
-    if dialog and dialog.which == "QUEST_SHARE" and QoL_IsInBG() then
-        StaticPopup_Hide("QUEST_SHARE")
+    if QDB("SBG") and dialog and dialog.which == "QUEST_ACCEPT" and QoL_IsInBG() then
+        UIErrorsFrame:AddMessage("Quest Blocked (BG)")
+        dialog:Hide()
+        return
     end
+    if _OrigStaticPopupOnShow then _OrigStaticPopupOnShow(dialog) end
 end
 
 -- ============================================================
