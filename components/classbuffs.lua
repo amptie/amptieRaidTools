@@ -139,9 +139,22 @@ local cbAutoRemoveRoster = {}
 local cbLastScan       = 0
 local CB_SCAN_THROTTLE = 2.0
 
-local cbBroadcastDirty = false
-local CB_POLL_INTERVAL = 3.0
-local cbPollTimer      = 0
+local cbBroadcastDirty  = false
+local CB_POLL_INTERVAL  = 3.0
+local cbPollTimer       = 0
+local cbScheduledSendAt = 0
+
+local function CB_GetSendOffset()
+    local n = GetNumRaidMembers()
+    if n == 0 then return 0 end
+    local myName = UnitName("player")
+    for i = 1, n do
+        if UnitName("raid"..i) == myName then
+            return (i - 1) / n * CB_POLL_INTERVAL
+        end
+    end
+    return 0
+end
 
 -- Reused table to collect buff names per unit
 local cbNameSet = {}
@@ -211,7 +224,8 @@ end
 -- Called by autobuffs.lua after any ART_BuffsList change
 function ART_CB_OnAutoRemoveChanged()
     CBApplyOwnAutoRemove()
-    cbBroadcastDirty = true
+    cbBroadcastDirty  = true
+    cbScheduledSendAt = GetTime() + CB_GetSendOffset()
 end
 
 local function CBReceiveAutoRemove(sender, msg)
@@ -833,12 +847,14 @@ cbPollFrame:SetScript("OnUpdate", function()
     local dt = arg1
     if not dt or dt < 0 then dt = 0 end
     cbPollTimer = cbPollTimer + dt
-    if cbPollTimer < CB_POLL_INTERVAL then return end
-    cbPollTimer = 0
-    if cbBroadcastDirty then
+    -- Broadcast: slot-based jitter — only send when this player's timeslot arrives
+    if cbBroadcastDirty and GetTime() >= cbScheduledSendAt then
         cbBroadcastDirty = false
         CBBroadcastAutoRemove()
     end
+    -- Scan: still every 3s regardless of broadcast
+    if cbPollTimer < CB_POLL_INTERVAL then return end
+    cbPollTimer = 0
     cbLastScan = 0
     CBScanAll()
     if cbOverlayFrame then RefreshCBOverlay() end
@@ -877,7 +893,8 @@ cbEventFrame:SetScript("OnEvent", function()
 
     elseif evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
         CBPruneRoster()
-        cbBroadcastDirty = true
+        cbBroadcastDirty  = true
+        cbScheduledSendAt = GetTime() + CB_GetSendOffset()
         CBTriggerScan()
         -- Update overlay visibility (may have entered/left a group)
         if cbOverlayFrame then

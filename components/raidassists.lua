@@ -138,6 +138,33 @@ local function BroadcastMTs()
 	DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r MT list broadcast.")
 end
 
+-- ── Auto-Broadcast Timer (10s, Raidlead only) ─────────────────
+local MT_AUTO_BROADCAST_INTERVAL = 30
+local mtAutoBroadcastTimer = 0
+local mtAutoBroadcastFrame = CreateFrame("Frame", nil, UIParent)
+mtAutoBroadcastFrame:SetScript("OnUpdate", function()
+	local dt = arg1
+	if not dt or dt < 0 then dt = 0 end
+	mtAutoBroadcastTimer = mtAutoBroadcastTimer + dt
+	if mtAutoBroadcastTimer < MT_AUTO_BROADCAST_INTERVAL then return end
+	mtAutoBroadcastTimer = 0
+	if GetNumRaidMembers() == 0 then return end
+	if not IsRaidLeader() then return end
+	local db = GetDB()
+	if not db then return end
+	local hasAny = false
+	for i = 1, NUM_MT_SLOTS do
+		if db.mainTanks[i] and db.mainTanks[i] ~= "" then hasAny = true; break end
+	end
+	if not hasAny then return end
+	local msg = ""
+	for i = 1, NUM_MT_SLOTS do
+		if i > 1 then msg = msg .. ";" end
+		msg = msg .. (db.mainTanks[i] or "")
+	end
+	SendAddonMessage(MT_PREFIX, "MT^" .. msg, "RAID")
+end)
+
 -- ── Event Frame ───────────────────────────────────────────────
 local raEvt = CreateFrame("Frame", "ART_RA_EventFrame", UIParent)
 raEvt:RegisterEvent("RAID_ROSTER_UPDATE")

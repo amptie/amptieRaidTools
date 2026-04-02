@@ -378,14 +378,118 @@ local function CreateMinimapButton()
 		DB.minimapX = cx - ucx
 		DB.minimapY = cy - ucy
 	end)
+	-- ── Right-click dropdown ──────────────────────────────────
+	local mmDD = CreateFrame("Frame", "ART_MinimapDropdown", UIParent)
+	mmDD:SetFrameStrata("TOOLTIP")
+	mmDD:SetWidth(160)
+	mmDD:SetBackdrop({
+		bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile=true, tileSize=16, edgeSize=10,
+		insets={left=3,right=3,top=3,bottom=3},
+	})
+	mmDD:SetBackdropColor(0.08, 0.08, 0.11, 1.0)
+	mmDD:SetBackdropBorderColor(0.5, 0.5, 0.6, 1)
+	mmDD:EnableMouse(true)
+	mmDD:Hide()
+
+	-- Close when clicking outside
+	local mmDDCatcher = CreateFrame("Button", nil, UIParent)
+	mmDDCatcher:SetFrameStrata("FULLSCREEN")
+	mmDDCatcher:SetAllPoints(UIParent)
+	mmDDCatcher:EnableMouse(true)
+	mmDDCatcher:Hide()
+	mmDDCatcher:SetScript("OnClick", function() mmDD:Hide(); this:Hide() end)
+	mmDD:SetScript("OnHide", function() mmDDCatcher:Hide() end)
+
+	local DD_PAD    = 6
+	local DD_ROW_H  = 20
+	local DD_HDR_H  = 18
+	local yOff = -DD_PAD
+
+	-- Helper: section header
+	local function DDHeader(label)
+		local fs = mmDD:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		fs:SetPoint("TOPLEFT", mmDD, "TOPLEFT", DD_PAD, yOff)
+		fs:SetTextColor(1, 0.82, 0, 1)
+		fs:SetText(label)
+		yOff = yOff - DD_HDR_H
+		-- thin separator line
+		local sep = mmDD:CreateTexture(nil, "ARTWORK")
+		sep:SetHeight(1)
+		sep:SetTexture(0.5, 0.5, 0.6, 0.5)
+		sep:SetPoint("TOPLEFT",  mmDD, "TOPLEFT",  DD_PAD,    yOff)
+		sep:SetPoint("TOPRIGHT", mmDD, "TOPRIGHT", -DD_PAD,   yOff)
+		yOff = yOff - 4
+	end
+
+	-- Helper: menu item row (Button)
+	local function DDItem(label, salvKey)
+		local row = CreateFrame("Button", nil, mmDD)
+		row:SetHeight(DD_ROW_H)
+		row:SetPoint("TOPLEFT",  mmDD, "TOPLEFT",  DD_PAD,    yOff)
+		row:SetPoint("TOPRIGHT", mmDD, "TOPRIGHT", -DD_PAD,   yOff)
+		row:SetBackdrop({ bgFile="Interface\\Tooltips\\UI-Tooltip-Background", tile=true, tileSize=16, edgeSize=0, insets={left=0,right=0,top=0,bottom=0} })
+		row:SetBackdropColor(0,0,0,0)
+		row:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+
+		local check = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		check:SetPoint("LEFT", row, "LEFT", 2, 0)
+		check:SetText("")
+		check:SetTextColor(0.2, 0.9, 0.2, 1)
+		check:SetWidth(14)
+		row.check = check
+
+		local lbl = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		lbl:SetPoint("LEFT", row, "LEFT", 18, 0)
+		lbl:SetText(label)
+		lbl:SetTextColor(0.85, 0.85, 0.85, 1)
+
+		row.salvKey = salvKey
+		row:SetScript("OnClick", function()
+			if ART_SetSalvationOverride then ART_SetSalvationOverride(this.salvKey) end
+			mmDD:Hide()
+		end)
+		yOff = yOff - DD_ROW_H
+		return row
+	end
+
+	-- Build menu items
+	DDHeader("Salvation")
+	local salvRows = {
+		DDItem("as in Profile", "profile"),
+		DDItem("Allow",         "allow"),
+		DDItem("Remove",        "remove"),
+	}
+
+	-- Resize dropdown to fit content
+	mmDD:SetHeight(-yOff + DD_PAD)
+
+	-- Refresh checkmarks before showing
+	local function RefreshMMDD()
+		local cur = ART_SalvationOverride or "profile"
+		for i = 1, getn(salvRows) do
+			salvRows[i].check:SetText(salvRows[i].salvKey == cur and "|cFF44FF44>|r" or "")
+		end
+	end
+
 	mb:SetScript("OnClick", function()
-		if arg1 == "LeftButton" then
+		local btn = arg1
+		if btn == "LeftButton" then
+			mmDD:Hide()
 			MainFrame_Toggle()
+		elseif btn == "RightButton" then
+			RefreshMMDD()
+			mmDD:ClearAllPoints()
+			mmDD:SetPoint("TOPRIGHT", this, "BOTTOMRIGHT", 0, -2)
+			mmDD:Show()
+			mmDDCatcher:Show()
 		end
 	end)
+	mb:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	mb:SetScript("OnEnter", function()
 		GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-		GameTooltip:SetText("amptieRaidTools\nLeft-click: Open/Close\nDrag: Move")
+		GameTooltip:SetText("amptieRaidTools\nLeft-click: Open/Close\nRight-click: Quick Menu\nDrag: Move")
 		GameTooltip:Show()
 	end)
 	mb:SetScript("OnLeave", function() GameTooltip:Hide() end)

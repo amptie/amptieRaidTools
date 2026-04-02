@@ -146,6 +146,18 @@ local QOL_DISMOUNT_ERRORS = {
     ERR_EMBLEMERROR_NOTABARDGEOSET,
 }
 
+-- Errors that mean "you must LEAVE your current form" → only these trigger QoL_CancelDruidForm.
+-- Errors that mean "you must BE shapeshifted" (SPELL_NOT_SHAPESHIFTED etc.) must NOT cancel a form
+-- the player is intentionally in (e.g. Moonkin Druid in raid would lose form on every item use).
+local QOL_LEAVE_FORM_ERRORS = {
+    [ERR_NOT_WHILE_SHAPESHIFTED]               = true,
+    [ERR_NO_ITEMS_WHILE_SHAPESHIFTED]          = true,
+    [ERR_CANT_INTERACT_SHAPESHIFTED]           = true,
+    [ERR_MOUNT_SHAPESHIFTED]                   = true,
+    [ERR_TAXIPLAYERSHAPESHIFTED]               = true,
+    [SPELL_FAILED_NO_ITEMS_WHILE_SHAPESHIFTED] = true,
+}
+
 -- LazyPig-style frame flags for Improved Right Click (IsShown() allein reicht nicht zuverlaessig)
 local artTradestatus = nil
 local artMailstatus = nil
@@ -705,6 +717,19 @@ end
 QuestFrameGreetingPanel_OnShow = QR_PostHook(QuestFrameGreetingPanel_OnShow, QR_QuestFrameGreetingPanel_OnShow)
 
 -- ============================================================
+-- BG leave timer: set when BG-end signal received, fired 0.5s later
+local bgLeaveAt = 0
+local qolBgLeaveFrame = CreateFrame("Frame", nil, UIParent)
+qolBgLeaveFrame:SetScript("OnUpdate", function()
+    if bgLeaveAt == 0 then return end
+    if GetTime() < bgLeaveAt then return end
+    bgLeaveAt = 0
+    if not QDB("LBG") then return end
+    if GetBattlefieldWinner() ~= nil then
+        LeaveBattlefield()
+    end
+end)
+
 -- Main event frame
 -- ============================================================
 local qolEventFrame = CreateFrame("Frame", "ART_QoL_EventFrame", UIParent)
@@ -715,6 +740,9 @@ qolEventFrame:RegisterEvent("RESURRECT_REQUEST")
 qolEventFrame:RegisterEvent("CONFIRM_SUMMON")
 qolEventFrame:RegisterEvent("DUEL_REQUESTED")
 qolEventFrame:RegisterEvent("UPDATE_BATTLEFIELD_STATUS")
+qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_NEUTRAL")
+qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_ALLIANCE")
+qolEventFrame:RegisterEvent("CHAT_MSG_BG_SYSTEM_HORDE")
 qolEventFrame:RegisterEvent("GOSSIP_SHOW")
 qolEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 qolEventFrame:RegisterEvent("ZONE_CHANGED")
@@ -816,14 +844,19 @@ qolEventFrame:SetScript("OnEvent", function()
     elseif evt == "UPDATE_BATTLEFIELD_STATUS" then
         local db = GetQolDB()
         for i = 1, 3 do
-            local status, mapName, instanceID, levelRange, maxPlayers, gameType, arenaType, rated, score =
-                GetBattlefieldStatus(i)
+            local status = GetBattlefieldStatus(i)
             if status == "confirm" and db.EBG then
                 AcceptBattlefieldPort(i, 1)
-            elseif status == "none" and db.LBG then
-                -- already left; re-queue handled below
             end
         end
+        -- Schedule a leave check — winner may not be set yet when this event fires
+        if db.LBG then bgLeaveAt = GetTime() + 0.5 end
+
+    elseif evt == "CHAT_MSG_BG_SYSTEM_NEUTRAL"
+        or evt == "CHAT_MSG_BG_SYSTEM_ALLIANCE"
+        or evt == "CHAT_MSG_BG_SYSTEM_HORDE" then
+        -- "X wins!" system message is another reliable end-of-BG signal
+        if QDB("LBG") then bgLeaveAt = GetTime() + 0.5 end
 
     elseif evt == "GOSSIP_SHOW" then
         QoL_HandleGossip()
@@ -856,9 +889,15 @@ qolEventFrame:SetScript("OnEvent", function()
                 end
             end
         end
-        -- Auto-stance: cancel druid form on shapeshift errors
-        if QDB("AUTOSTANCE") and a1 and strfind(a1, "shapeshift") then
-            QoL_CancelDruidForm()
+        -- Auto-stance: cancel druid form only when the error specifically means
+        -- "you must leave your current form" — NOT for errors like SPELL_NOT_SHAPESHIFTED
+        -- which mean "you need TO BE shapeshifted" (e.g. Moonkin casting Balance spells).
+        if QDB("AUTOSTANCE") and a1 and QOL_LEAVE_FORM_ERRORS[a1] then
+            if a1 == ERR_CANT_INTERACT_SHAPESHIFTED and UnitAffectingCombat("player") then
+                -- don't cancel form when clicking NPCs in combat (same guard as dismount)
+            else
+                QoL_CancelDruidForm()
+            end
         end
     end
 end)

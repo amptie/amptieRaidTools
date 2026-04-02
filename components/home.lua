@@ -610,6 +610,13 @@ function AmptieRaidTools_InitHome(body)
 
 	RefreshSalvButtons()
 
+	-- Global: lets external callers (minimap dropdown) set the override
+	-- and keep the home panel buttons in sync.
+	ART_SetSalvationOverride = function(key)
+		ART_SalvationOverride = key
+		RefreshSalvButtons()
+	end
+
 	-- ── Separator before Alternative Specs ──────────────────
 	local homeSep2 = frame:CreateTexture(nil, "ARTWORK")
 	homeSep2:SetHeight(1)

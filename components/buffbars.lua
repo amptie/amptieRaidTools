@@ -1085,9 +1085,19 @@ end)
 -- ============================================================
 -- ── Blizzard frame suppression (VCB pattern)
 -- ============================================================
+-- Track visibility state before we suppressed it.
+-- nil  = we have not suppressed it this session
+-- true = it was shown when we suppressed it (restore on un-suppress)
+-- false = it was already hidden when we suppressed it (don't restore)
+local bbBlizzWasShown       = nil
+local bbBlizzWeaponWasShown = nil
+
 local function BBSuppressBlizzBuffFrame()
-    -- Hide BuffFrame (contains both buffs and debuffs in WoW 1.12)
     if BuffFrame then
+        -- Only snapshot once (don't overwrite a prior snapshot)
+        if bbBlizzWasShown == nil then
+            bbBlizzWasShown = BuffFrame:IsShown() and true or false
+        end
         BuffFrame:Hide()
         for i = 0, 23 do
             local btn = getglobal("BuffButton" .. i)
@@ -1098,20 +1108,27 @@ end
 
 local function BBRestoreBlizzBuffFrame()
     local db = GetBBDB()
-    -- Only restore if neither buff nor debuff bar is active AND persistent hide is off
+    -- Keep suppressed if a bar is still active or persistent hide is on
     if db and (db.buffBarEnabled or db.debuffBarEnabled or db.hideBlizzBuffFrame) then return end
     if BuffFrame then
         for i = 0, 23 do
             local btn = getglobal("BuffButton" .. i)
             if btn then btn:RegisterEvent("PLAYER_AURAS_CHANGED") end
         end
-        BuffFrame:Show()
-        if BuffFrame_UpdateAllBuffs then BuffFrame_UpdateAllBuffs() end
+        -- Only show if it was visible before we hid it
+        if bbBlizzWasShown then
+            BuffFrame:Show()
+            if BuffFrame_UpdateAllBuffs then BuffFrame_UpdateAllBuffs() end
+        end
     end
+    bbBlizzWasShown = nil  -- reset so next suppress snapshots fresh state
 end
 
 local function BBSuppressBlizzWeaponFrame()
     if TemporaryEnchantFrame then
+        if bbBlizzWeaponWasShown == nil then
+            bbBlizzWeaponWasShown = TemporaryEnchantFrame:IsShown() and true or false
+        end
         TemporaryEnchantFrame:Hide()
         for i = 1, 2 do
             local btn = getglobal("TempEnchant" .. i)
@@ -1126,9 +1143,12 @@ local function BBRestoreBlizzWeaponFrame()
             local btn = getglobal("TempEnchant" .. i)
             if btn then btn:RegisterEvent("PLAYER_AURAS_CHANGED") end
         end
-        TemporaryEnchantFrame:Show()
-        if TemporaryEnchantFrame_Update then TemporaryEnchantFrame_Update() end
+        if bbBlizzWeaponWasShown then
+            TemporaryEnchantFrame:Show()
+            if TemporaryEnchantFrame_Update then TemporaryEnchantFrame_Update() end
+        end
     end
+    bbBlizzWeaponWasShown = nil
 end
 
 -- ============================================================

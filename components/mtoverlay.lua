@@ -113,10 +113,13 @@ local function LayoutOverlay()
 	local blockW = showTargets and (fw + sp + tw) or fw
 
 	local locked  = (db.locked ~= false)
-	local handleH = locked and 0 or HANDLE_H
 
 	if dragHandle then
-		if locked then dragHandle:Hide() else dragHandle:Show() end
+		if locked then
+			dragHandle:Hide()
+		else
+			dragHandle:Show()
+		end
 	end
 
 	local mts    = GetMTNames()
@@ -132,10 +135,16 @@ local function LayoutOverlay()
 	local gridW    = usedCols * blockW + (usedCols - 1) * sp
 	local gridH    = rows     * fh     + (rows     - 1) * sp
 
+	-- ovlFrame covers only the MT bars — handle sits above it, not inside it
 	ovlFrame:SetWidth( gridW)
-	ovlFrame:SetHeight(gridH + handleH)
+	ovlFrame:SetHeight(gridH)
 
-	if dragHandle then dragHandle:SetWidth(gridW) end
+	-- drag handle floats above ovlFrame (no offset baked into bar positions)
+	if dragHandle then
+		dragHandle:SetWidth(gridW)
+		dragHandle:ClearAllPoints()
+		dragHandle:SetPoint("BOTTOMLEFT", ovlFrame, "TOPLEFT", 0, 0)
+	end
 
 	local slot = 0
 	for i = 1, NUM_MT_SLOTS do
@@ -146,7 +155,7 @@ local function LayoutOverlay()
 			local col = mmod(slot, cols)
 			local row = floor(slot / cols)
 			local bx  = col * (blockW + sp)
-			local by  = -(row * (fh + sp)) - handleH
+			local by  = -(row * (fh + sp))
 
 			f:SetWidth(fw)
 			f:SetHeight(fh)
@@ -264,7 +273,33 @@ local function UpdateOverlay()
 					tf:Show()
 					tf.unit = tunit
 					local tname = UnitName(tunit) or ""
-					UpdateUnitFrame(tf, tunit, useTgtClassCol)
+					if useTgtClassCol then
+						UpdateUnitFrame(tf, tunit, true)
+					else
+						-- reaction-based coloring for enemy targets
+						local cur  = UnitHealth(tunit)    or 0
+						local maxH = UnitHealthMax(tunit) or 1
+						if maxH == 0 then maxH = 1 end
+						tf.bar:SetMinMaxValues(0, maxH)
+						tf.bar:SetValue(cur)
+						if UnitIsDead(tunit) then
+							tf.bar:SetStatusBarColor(0.45, 0.45, 0.45, 1)
+							tf.hpText:SetText("Dead")
+						else
+							local reaction = UnitReaction(tunit, "player") or 4
+							local r, g, b
+							if reaction <= 2 then
+								r, g, b = 0.9, 0.1, 0.1   -- hostile: red
+							elseif reaction <= 4 then
+								r, g, b = 0.9, 0.8, 0.1   -- neutral: yellow
+							else
+								r, g, b = 0.1, 0.8, 0.1   -- friendly: green
+							end
+							tf.bar:SetStatusBarColor(r, g, b, 1)
+							local pct = floor(cur / maxH * 100 + 0.5)
+							tf.hpText:SetText(pct .. "%")
+						end
+					end
 					TruncateName(tf, tname)
 					-- Raid mark icon
 					if tf.raidMark then
@@ -302,10 +337,13 @@ function AmptieRaidTools_InitMTOverlay()
 		end
 	end)
 
-	-- Drag handle (visible only when unlocked)
-	dragHandle = CreateFrame("Frame", nil, ovlFrame)
+	-- Drag handle: floats above ovlFrame as a separate UIParent child.
+	-- This way its height is never included in ovlFrame's bounds,
+	-- so locking/unlocking does not shift the MT bar positions.
+	dragHandle = CreateFrame("Frame", nil, UIParent)
+	dragHandle:SetFrameStrata("MEDIUM")
 	dragHandle:SetHeight(HANDLE_H)
-	dragHandle:SetPoint("TOPLEFT", ovlFrame, "TOPLEFT", 0, 0)
+	dragHandle:SetPoint("BOTTOMLEFT", ovlFrame, "TOPLEFT", 0, 0)
 	dragHandle:EnableMouse(true)
 	dragHandle:RegisterForDrag("LeftButton")
 

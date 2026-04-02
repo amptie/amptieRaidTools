@@ -89,25 +89,34 @@ local function RequestSpecs()
     SendAddonMessage(ROLE_PREFIX, "R", ch)
 end
 
--- ── 5-second poll for spec broadcasts ─────────────────────────
--- RAID_ROSTER_UPDATE fires many times during a pull (zone-ins, sub-group
--- reassignments, deaths …).  A dirty flag + 5 s timer collapses all of
--- those into one BroadcastOwnSpec + RequestSpecs pair per 5 s window.
-local rlBroadcastDirty = false
-local RL_POLL_INTERVAL = 5.0
-local rlPollTimer      = 0
+-- ── Spec broadcast with slot-based jitter ─────────────────────
+-- RAID_ROSTER_UPDATE fires many times during a pull. Instead of all 40
+-- players sending at the same moment, each player waits for their own
+-- timeslot: offset = (raidSlot-1) / total * interval. This spreads the
+-- 40 packets evenly across the full interval window.
+local rlBroadcastDirty  = false
+local RL_POLL_INTERVAL  = 5.0
+local rlScheduledSendAt = 0   -- GetTime() value when this player should send
+
+local function RL_GetSendOffset()
+    local n = GetNumRaidMembers()
+    if n == 0 then return 0 end
+    local myName = UnitName("player")
+    for i = 1, n do
+        if UnitName("raid"..i) == myName then
+            return (i - 1) / n * RL_POLL_INTERVAL
+        end
+    end
+    return 0
+end
 
 local rlPollFrame = CreateFrame("Frame", nil, UIParent)
 rlPollFrame:SetScript("OnUpdate", function()
-    local dt = arg1
-    rlPollTimer = rlPollTimer + dt
-    if rlPollTimer < RL_POLL_INTERVAL then return end
-    rlPollTimer = 0
-    if rlBroadcastDirty then
-        rlBroadcastDirty = false
-        BroadcastOwnSpec()
-        RequestSpecs()
-    end
+    if not rlBroadcastDirty then return end
+    if GetTime() < rlScheduledSendAt then return end
+    rlBroadcastDirty = false
+    BroadcastOwnSpec()
+    RequestSpecs()
 end)
 
 -- ============================================================
@@ -227,7 +236,8 @@ rlEventFrame:SetScript("OnEvent", function()
                 if cl then rosterClasses[me] = string.upper(cl) end
             end
         end
-        rlBroadcastDirty = true   -- handled by 5s poll timer
+        rlBroadcastDirty  = true
+        rlScheduledSendAt = GetTime() + RL_GetSendOffset()
         RefreshPanel()
     end
 end)
