@@ -18,6 +18,55 @@ local CB_HAS_SUPERWOW = (SpellInfo ~= nil)
 local cbScanTip     = CreateFrame("GameTooltip", "ART_CB_ScanTip", UIParent, "GameTooltipTemplate")
 local cbScanTipText = nil  -- resolved lazily on first use
 
+-- ── Custom overlay tooltip (pfUI-safe: not GameTooltip) ──────
+local CB_TIP_PAD = 6
+local CB_TIP_LINE_H = 14
+local cbTipFrame = CreateFrame("Frame", "ART_CB_TipFrame", UIParent)
+cbTipFrame:SetFrameStrata("TOOLTIP")
+cbTipFrame:SetBackdrop({
+    bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 10,
+    insets = { left=3, right=3, top=3, bottom=3 },
+})
+cbTipFrame:SetBackdropColor(0.06, 0.06, 0.08, 0.95)
+cbTipFrame:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+cbTipFrame:Hide()
+local cbTipLines = {}
+local function CBTipGetLine(idx)
+    if not cbTipLines[idx] then
+        local fs = cbTipFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("TOPLEFT", cbTipFrame, "TOPLEFT", CB_TIP_PAD, -(CB_TIP_PAD + (idx-1)*CB_TIP_LINE_H))
+        fs:SetJustifyH("LEFT")
+        cbTipLines[idx] = fs
+    end
+    return cbTipLines[idx]
+end
+local function CBTipShow(anchorFrame, lines)
+    -- lines = { {text, r, g, b}, ... }
+    local maxW = 0
+    for i = 1, getn(lines) do
+        local ln = CBTipGetLine(i)
+        ln:SetText(lines[i][1])
+        ln:SetTextColor(lines[i][2], lines[i][3], lines[i][4], 1)
+        ln:Show()
+        local w = ln:GetStringWidth()
+        if w > maxW then maxW = w end
+    end
+    -- hide unused lines
+    for i = getn(lines)+1, getn(cbTipLines) do cbTipLines[i]:Hide() end
+    local h = getn(lines) * CB_TIP_LINE_H + CB_TIP_PAD * 2
+    local w = maxW + CB_TIP_PAD * 2
+    cbTipFrame:SetWidth(w)
+    cbTipFrame:SetHeight(h)
+    cbTipFrame:ClearAllPoints()
+    cbTipFrame:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", 4, 0)
+    cbTipFrame:Show()
+end
+local function CBTipHide()
+    cbTipFrame:Hide()
+end
+
 -- ============================================================
 -- Buff group definitions
 -- ============================================================
@@ -390,13 +439,12 @@ local function RefreshCBOverlay()
             row.lineFS:SetJustifyH("LEFT")
             row:SetScript("OnEnter", function()
                 if not this.missingNames or getn(this.missingNames) == 0 then return end
-                GameTooltip:SetOwner(this, "ANCHOR_CURSOR")
-                GameTooltip:AddLine(this.buffLabel, 1, 0.82, 0, 1)
-                GameTooltip:AddLine("Missing (" .. getn(this.missingNames) .. "):", 0.7, 0.7, 0.7, 1)
+                local tipLines = {}
+                tinsert(tipLines, { this.buffLabel, 1, 0.82, 0 })
+                tinsert(tipLines, { "Missing (" .. getn(this.missingNames) .. "):", 0.7, 0.7, 0.7 })
 
                 local numRaid = GetNumRaidMembers()
                 if numRaid > 0 and this.casterClass == "PALADIN" then
-                    -- Paladin buffs: group missing players by class
                     local nameClass = {}
                     for ri = 1, numRaid do
                         local n, _, _, _, cls = GetRaidRosterInfo(ri)
@@ -407,19 +455,15 @@ local function RefreshCBOverlay()
                     for ni = 1, getn(this.missingNames) do
                         local n   = this.missingNames[ni]
                         local cls = nameClass[n] or "?"
-                        if not byClass[cls] then
-                            byClass[cls] = {}
-                            tinsert(classOrder, cls)
-                        end
+                        if not byClass[cls] then byClass[cls] = {}; tinsert(classOrder, cls) end
                         tinsert(byClass[cls], n)
                     end
                     table.sort(classOrder)
                     for ci = 1, getn(classOrder) do
                         local cls = classOrder[ci]
-                        GameTooltip:AddLine(cls .. ": " .. table.concat(byClass[cls], ", "), 1, 0.4, 0.4, 1)
+                        tinsert(tipLines, { cls .. ": " .. table.concat(byClass[cls], ", "), 1, 0.4, 0.4 })
                     end
                 elseif numRaid > 0 then
-                    -- Other buffs: group missing players by raid subgroup
                     local nameGroup = {}
                     for ri = 1, numRaid do
                         local n, _, subgroup = GetRaidRosterInfo(ri)
@@ -430,26 +474,22 @@ local function RefreshCBOverlay()
                     for ni = 1, getn(this.missingNames) do
                         local n   = this.missingNames[ni]
                         local grp = nameGroup[n] or 0
-                        if not byGroup[grp] then
-                            byGroup[grp] = {}
-                            tinsert(groupOrder, grp)
-                        end
+                        if not byGroup[grp] then byGroup[grp] = {}; tinsert(groupOrder, grp) end
                         tinsert(byGroup[grp], n)
                     end
                     table.sort(groupOrder)
                     for gi = 1, getn(groupOrder) do
                         local grp = groupOrder[gi]
-                        GameTooltip:AddLine("Grp " .. grp .. ": " .. table.concat(byGroup[grp], ", "), 1, 0.4, 0.4, 1)
+                        tinsert(tipLines, { "Grp " .. grp .. ": " .. table.concat(byGroup[grp], ", "), 1, 0.4, 0.4 })
                     end
                 else
-                    -- Party / solo: flat list
                     for ni = 1, getn(this.missingNames) do
-                        GameTooltip:AddLine(this.missingNames[ni], 1, 0.4, 0.4, 1)
+                        tinsert(tipLines, { this.missingNames[ni], 1, 0.4, 0.4 })
                     end
                 end
-                GameTooltip:Show()
+                CBTipShow(cbOverlayFrame, tipLines)
             end)
-            row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            row:SetScript("OnLeave", function() CBTipHide() end)
             tinsert(cbOverlayFrame.rows, row)
         end
 
@@ -786,8 +826,7 @@ cbEventFrame:RegisterEvent("PLAYER_LOGIN")
 cbEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 cbEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 cbEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
--- UNIT_AURA intentionally omitted: fires hundreds of times/sec in raids.
--- The 3s poll (cbPollFrame) is sufficient for Class Buffs tracking.
+cbEventFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
 
 local cbPollFrame = CreateFrame("Frame", nil, UIParent)
 cbPollFrame:SetScript("OnUpdate", function()
@@ -799,10 +838,10 @@ cbPollFrame:SetScript("OnUpdate", function()
     if cbBroadcastDirty then
         cbBroadcastDirty = false
         CBBroadcastAutoRemove()
-        cbLastScan = 0
-        CBScanAll()
-        if cbOverlayFrame then RefreshCBOverlay() end
     end
+    cbLastScan = 0
+    CBScanAll()
+    if cbOverlayFrame then RefreshCBOverlay() end
 end)
 
 cbEventFrame:SetScript("OnEvent", function()
@@ -845,6 +884,9 @@ cbEventFrame:SetScript("OnEvent", function()
             CBOverlayUpdateVisibility()
             if cbOverlayFrame:IsShown() then RefreshCBOverlay() end
         end
+
+    elseif evt == "PLAYER_AURAS_CHANGED" then
+        CBTriggerScan()
 
     end
 end)

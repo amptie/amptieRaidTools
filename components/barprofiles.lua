@@ -21,6 +21,18 @@ local GetTime = GetTime
 -- cover up to page 15, matching any realistic RingMenu or Bartender configuration.
 local ART_BP_MAX_SLOT = 180
 
+local ART_BP_SPECS_BY_CLASS = {
+	WARRIOR = { "Arms", "Fury Sweeping Strikes", "Fury", "Fury Two-Handed", "Fury Protection", "Protection", "Deep Protection" },
+	PALADIN = { "Shockadin", "Retribution", "Holy", "Protection" },
+	MAGE    = { "Arcane", "Fire", "Frost" },
+	DRUID   = { "Balance", "Feral Cat", "Feral Bear", "Restoration" },
+	ROGUE   = { "Assassination", "Combat", "Subtlety" },
+	SHAMAN  = { "Elemental", "Spellhancer", "Spellhancer Tank", "Enhancement", "Enhancement Tank", "Restoration" },
+	HUNTER  = { "Beastmaster", "Marksman", "Survival" },
+	PRIEST  = { "Discipline Smite", "Discipline Holy", "Holy", "Shadow" },
+	WARLOCK = { "SM/Ruin", "Affliction", "Demonology", "Destruction Fire" },
+}
+
 -- ============================================================
 -- Hidden tooltip for reading action slot names
 -- ============================================================
@@ -283,6 +295,28 @@ local ART_BP_EnterWorldFrame = CreateFrame("Frame", "ART_BP_EnterWorldFrame", UI
 ART_BP_EnterWorldFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 ART_BP_EnterWorldFrame:SetScript("OnEvent", function()
 	ART_BP_LastBoundSpec = nil
+
+	-- Remove spec bindings that don't belong to the current class
+	if ART_BarSpecBindings then
+		local _, playerClass = UnitClass("player")
+		playerClass = playerClass and string.upper(playerClass) or ""
+		local validSpecs = ART_BP_SPECS_BY_CLASS[playerClass]
+		if validSpecs then
+			-- Build fast lookup set of valid specs for this class
+			local validSet = {}
+			for i = 1, getn(validSpecs) do validSet[validSpecs[i]] = true end
+			for spec in pairs(ART_BarSpecBindings) do
+				if not validSet[spec] then
+					ART_BarSpecBindings[spec] = nil
+				end
+			end
+		else
+			-- Unknown class: wipe all bindings
+			for spec in pairs(ART_BarSpecBindings) do
+				ART_BarSpecBindings[spec] = nil
+			end
+		end
+	end
 end)
 
 function ART_BP_OnSpecChanged(spec)
@@ -323,16 +357,6 @@ end
 -- ============================================================
 -- UI
 -- ============================================================
-local ART_BP_SPECS_BY_CLASS = {
-	WARRIOR = { "Arms", "Fury Sweeping Strikes", "Fury", "Fury Two-Handed", "Fury Protection", "Protection", "Deep Protection" },
-	PALADIN = { "Shockadin", "Retribution", "Holy", "Protection" },
-	MAGE    = { "Arcane", "Fire", "Frost" },
-	DRUID   = { "Balance", "Feral Cat", "Feral Bear", "Restoration" },
-	ROGUE   = { "Assassination", "Combat", "Subtlety" },
-	SHAMAN  = { "Elemental", "Spellhancer", "Enhancement", "Enhancement Tank", "Restoration" },
-	HUNTER  = { "Beastmaster", "Marksman", "Survival" },
-	PRIEST  = { "Discipline Smite", "Discipline Holy", "Holy", "Shadow" },
-}
 
 local ART_BP_BTN_BD = {
 	bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",

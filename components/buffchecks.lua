@@ -6,6 +6,55 @@ local tinsert = table.insert
 local floor   = math.floor
 local sfind   = string.find
 
+-- ============================================================
+-- Custom pfUI-safe tooltip frame
+-- ============================================================
+local BC_TIP_PAD    = 6
+local BC_TIP_LINE_H = 14
+local bcTipFrame = CreateFrame("Frame", "ART_BC_TipFrame", UIParent)
+bcTipFrame:SetFrameStrata("TOOLTIP")
+bcTipFrame:SetBackdrop({
+    bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 10,
+    insets = { left=3, right=3, top=3, bottom=3 },
+})
+bcTipFrame:SetBackdropColor(0.06, 0.06, 0.08, 0.95)
+bcTipFrame:SetBackdropBorderColor(0.4, 0.4, 0.45, 1)
+bcTipFrame:Hide()
+local bcTipLines = {}
+local function BCTipGetLine(idx)
+    if not bcTipLines[idx] then
+        local fs = bcTipFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetPoint("TOPLEFT", bcTipFrame, "TOPLEFT", BC_TIP_PAD, -(BC_TIP_PAD + (idx-1)*BC_TIP_LINE_H))
+        fs:SetJustifyH("LEFT")
+        bcTipLines[idx] = fs
+    end
+    return bcTipLines[idx]
+end
+local function BCTipShow(anchorFrame, lines)
+    local maxW = 0
+    for i = 1, getn(lines) do
+        local ln = BCTipGetLine(i)
+        ln:SetText(lines[i][1])
+        ln:SetTextColor(lines[i][2], lines[i][3], lines[i][4], 1)
+        ln:Show()
+        local w = ln:GetStringWidth()
+        if w > maxW then maxW = w end
+    end
+    for i = getn(lines)+1, getn(bcTipLines) do bcTipLines[i]:Hide() end
+    local h = getn(lines) * BC_TIP_LINE_H + BC_TIP_PAD * 2
+    local w = maxW + BC_TIP_PAD * 2
+    bcTipFrame:SetWidth(w)
+    bcTipFrame:SetHeight(h)
+    bcTipFrame:ClearAllPoints()
+    bcTipFrame:SetPoint("TOPLEFT", anchorFrame, "TOPRIGHT", 4, 0)
+    bcTipFrame:Show()
+end
+local function BCTipHide()
+    bcTipFrame:Hide()
+end
+
 local _ART_BC_RefreshRules  = nil
 local ART_BC_dropdownHiders = {}
 
@@ -1237,15 +1286,15 @@ local function RefreshBCOverlay()
             row.lineFS:SetJustifyH("LEFT")
             row:SetScript("OnEnter", function()
                 if not this.missingNames or getn(this.missingNames) == 0 then return end
-                GameTooltip:SetOwner(this, "ANCHOR_CURSOR")
-                GameTooltip:AddLine(this.buffLabel, 1, 0.82, 0, 1)
-                GameTooltip:AddLine("Missing (" .. getn(this.missingNames) .. "):", 0.7, 0.7, 0.7, 1)
+                local tipLines = {}
+                tinsert(tipLines, { this.buffLabel, 1, 0.82, 0 })
+                tinsert(tipLines, { "Missing (" .. getn(this.missingNames) .. "):", 0.7, 0.7, 0.7 })
                 for ni = 1, getn(this.missingNames) do
-                    GameTooltip:AddLine(this.missingNames[ni], 1, 0.4, 0.4, 1)
+                    tinsert(tipLines, { this.missingNames[ni], 1, 0.4, 0.4 })
                 end
-                GameTooltip:Show()
+                BCTipShow(bcOverlayFrame, tipLines)
             end)
-            row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            row:SetScript("OnLeave", function() BCTipHide() end)
             tinsert(bcOverlayFrame.rows, row)
         end
         row:ClearAllPoints()
@@ -1341,7 +1390,7 @@ end
 function AmptieRaidTools_InitBuffChecks(body)
     local panel = CreateFrame("Frame", "AmptieRaidToolsBuffChecksPanel", body)
     panel:SetAllPoints(body)
-
+    panel.noOuterScroll = true
     AmptieRaidTools_RegisterComponent("buffchecks", panel)
 
     -- Trigger a fresh overlay check whenever the active profile changes.

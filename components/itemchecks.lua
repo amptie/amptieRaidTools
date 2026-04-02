@@ -669,6 +669,7 @@ function AmptieRaidTools_InitItemChecks(body)
     local panel = CreateFrame("Frame", "ART_ICPanel", body)
     panel:SetAllPoints(body)
     panel:Hide()
+    panel.noOuterScroll = true
     AmptieRaidTools_RegisterComponent("itemchecks", panel)
 
     -- Title

@@ -649,6 +649,10 @@ function AmptieRaidTools_InitRaidAssists(body)
 	local broadcastBtn = MakeBtn(panel, "Broadcast MTs to Raid", 160, 22)
 	broadcastBtn:SetPoint("LEFT", mtDesc, "RIGHT", 12, 0)
 	broadcastBtn:SetScript("OnClick", function()
+		if not IsRaidLeader() and not IsRaidOfficer() then
+			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Cannot broadcast: requires Raid Leader or Assist.")
+			return
+		end
 		local db = GetDB()
 		if not db then return end
 		for i = 1, NUM_MT_SLOTS do
@@ -671,7 +675,7 @@ function AmptieRaidTools_InitRaidAssists(body)
 	local MT_EB_W   = 178
 	local MT_ROW_H  = 24
 	local MT_GAP    = 4
-	local MT_COL2_X = 10 + MT_LBL_W + MT_EB_W + 24
+	local MT_COL2_X = 10 + MT_LBL_W + MT_EB_W + 44
 
 	local function SaveMT(idx, name)
 		local db = GetDB()
@@ -700,15 +704,31 @@ function AmptieRaidTools_InitRaidAssists(body)
 		eb:SetHeight(MT_ROW_H - 2)
 
 		local myI = i
-		eb:SetScript("OnEnterPressed", function()
+		local function FocusNext()
 			SaveMT(myI, this:GetText())
 			this:ClearFocus()
-		end)
+			local next = mtEBs[myI + 1]
+			if next then
+				next:SetFocus()
+				next:HighlightText()
+			end
+		end
+		eb:SetScript("OnEnterPressed", FocusNext)
+		eb:SetScript("OnTabPressed",   FocusNext)
 		eb:SetScript("OnEditFocusLost", function()
 			this:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
 			SaveMT(myI, this:GetText())
 		end)
 		mtEBs[i] = eb
+
+		local clearBtn = MakeBtn(panel, "x", 16, 16)
+		clearBtn:SetPoint("LEFT", eb, "RIGHT", 3, 0)
+		clearBtn.fs:SetTextColor(0.7, 0.3, 0.3, 1)
+		clearBtn:SetScript("OnClick", function()
+			eb:SetText("")
+			SaveMT(myI, "")
+			if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
+		end)
 	end
 
 	-- ══════════════════════════════════════════════════════════
@@ -735,14 +755,15 @@ function AmptieRaidTools_InitRaidAssists(body)
 		db.mtOverlay[key] = val
 	end
 
-	-- Row 1: section header + show/hide toggle
+	-- Row 1: section header
 	local ovlSecHdr = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	ovlSecHdr:SetPoint("TOPLEFT", mtDesc, "BOTTOMLEFT", 0, OVL_TOP_Y)
+	ovlSecHdr:SetPoint("TOPLEFT", mtDesc, "BOTTOMLEFT", 0, OVL_TOP_Y - 10)
 	ovlSecHdr:SetText("MT Overlay")
 	ovlSecHdr:SetTextColor(1, 0.82, 0, 1)
 
+	-- Row 2: Show / Lock buttons (below header)
 	local ovlToggle = MakeBtn(panel, "Show: OFF", 88, 20)
-	ovlToggle:SetPoint("LEFT", ovlSecHdr, "RIGHT", 10, 0)
+	ovlToggle:SetPoint("TOPLEFT", ovlSecHdr, "BOTTOMLEFT", 0, -4)
 
 	local ovlLockBtn = MakeBtn(panel, "Locked", 72, 20)
 	ovlLockBtn:SetPoint("LEFT", ovlToggle, "RIGHT", 6, 0)
@@ -859,17 +880,17 @@ function AmptieRaidTools_InitRaidAssists(body)
 		return cont
 	end
 
-	-- Row 2: Width + Height
+	-- Row 3: Width + Height
 	local widthCtrl  = MakeSpinCtrl(panel, "Width:",  "frameW", 60,  300, 5,  120)
 	local heightCtrl = MakeSpinCtrl(panel, "Height:", "frameH", 20,  80,  2,  36)
-	widthCtrl:SetPoint( "TOPLEFT", mtDesc, "BOTTOMLEFT", 0,                          OVL_TOP_Y - 26)
-	heightCtrl:SetPoint("TOPLEFT", mtDesc, "BOTTOMLEFT", OVL_SPIN_W + OVL_SPIN_GAP,  OVL_TOP_Y - 26)
+	widthCtrl:SetPoint( "TOPLEFT", mtDesc, "BOTTOMLEFT", 0,                          OVL_TOP_Y - 60)
+	heightCtrl:SetPoint("TOPLEFT", mtDesc, "BOTTOMLEFT", OVL_SPIN_W + OVL_SPIN_GAP,  OVL_TOP_Y - 60)
 
-	-- Row 3: Cols + Spacing + Color toggle
+	-- Row 4: Cols + Spacing + Color toggle
 	local colsCtrl    = MakeSpinCtrl(panel, "Cols:",    "cols",    1,  8,   1,  4)
 	local spacingCtrl = MakeSpinCtrl(panel, "Spacing:", "spacing", 0,  20,  1,  4)
-	colsCtrl:SetPoint(   "TOPLEFT", mtDesc, "BOTTOMLEFT", 0,                          OVL_TOP_Y - 52)
-	spacingCtrl:SetPoint("TOPLEFT", mtDesc, "BOTTOMLEFT", OVL_SPIN_W + OVL_SPIN_GAP,  OVL_TOP_Y - 52)
+	colsCtrl:SetPoint(   "TOPLEFT", mtDesc, "BOTTOMLEFT", 0,                          OVL_TOP_Y - 86)
+	spacingCtrl:SetPoint("TOPLEFT", mtDesc, "BOTTOMLEFT", OVL_SPIN_W + OVL_SPIN_GAP,  OVL_TOP_Y - 86)
 
 	local ovlColorBtn = MakeBtn(panel, "Green/Red", 84, 20)
 	ovlColorBtn:SetPoint("LEFT", spacingCtrl, "RIGHT", OVL_SPIN_GAP, 0)
@@ -899,10 +920,62 @@ function AmptieRaidTools_InitRaidAssists(body)
 		end
 	end)
 
+	-- Row 5: MT Targets section header
+	local mtTgtHdr = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	mtTgtHdr:SetPoint("TOPLEFT", mtDesc, "BOTTOMLEFT", 0, OVL_TOP_Y - 116)
+	mtTgtHdr:SetText("MT Targets")
+	mtTgtHdr:SetTextColor(1, 0.82, 0, 1)
+
+	-- Row 6: Show MT Targets checkbox
+	local cbMTTargets = ART_CreateCheckbox(panel, "Show MT Targets")
+	cbMTTargets:SetPoint("TOPLEFT", mtTgtHdr, "BOTTOMLEFT", 0, -4)
+	cbMTTargets:SetChecked(OvlGet("showTargets", false))
+	cbMTTargets.userOnClick = function()
+		local v = cbMTTargets:GetChecked() and true or false
+		OvlSet("showTargets", v)
+		if AmptieRaidTools_RefreshMTOverlayLayout then
+			AmptieRaidTools_RefreshMTOverlayLayout()
+		end
+	end
+
+	-- Row 7: Target Width spin + Target color toggle
+	local targetWidthCtrl = MakeSpinCtrl(panel, "Tgt Width:", "targetW", 40, 200, 5, 80)
+	targetWidthCtrl:SetPoint("TOPLEFT", cbMTTargets, "BOTTOMLEFT", 0, -4)
+
+	local tgtColorBtn = MakeBtn(panel, "Green/Red", 84, 20)
+	tgtColorBtn:SetPoint("LEFT", targetWidthCtrl, "RIGHT", OVL_SPIN_GAP, 0)
+
+	local function UpdateTgtColorBtn()
+		local cls = OvlGet("targetClassColor", false)
+		if cls then
+			tgtColorBtn.fs:SetText("Class Color")
+			tgtColorBtn:SetBackdropColor(0.08, 0.08, 0.20, 0.95)
+			tgtColorBtn:SetBackdropBorderColor(0.35, 0.35, 0.75, 1)
+			tgtColorBtn.fs:SetTextColor(0.5, 0.6, 1.0, 1)
+		else
+			tgtColorBtn.fs:SetText("Green/Red")
+			tgtColorBtn:SetBackdropColor(0.08, 0.20, 0.08, 0.95)
+			tgtColorBtn:SetBackdropBorderColor(0.35, 0.75, 0.35, 1)
+			tgtColorBtn.fs:SetTextColor(0.4, 1.0, 0.4, 1)
+		end
+	end
+	UpdateTgtColorBtn()
+
+	tgtColorBtn:SetScript("OnClick", function()
+		local v = not OvlGet("targetClassColor", false)
+		OvlSet("targetClassColor", v)
+		UpdateTgtColorBtn()
+		if AmptieRaidTools_RefreshMTOverlayLayout then
+			AmptieRaidTools_RefreshMTOverlayLayout()
+		end
+	end)
+
 	RefreshOvlUI = function()
 		UpdateOvlToggle()
 		UpdateOvlLockBtn()
 		UpdateOvlColorBtn()
+		UpdateTgtColorBtn()
+		cbMTTargets:SetChecked(OvlGet("showTargets", false))
 		for i = 1, getn(ovlSpinRefreshFns) do
 			ovlSpinRefreshFns[i]()
 		end

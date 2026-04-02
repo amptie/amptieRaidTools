@@ -880,6 +880,7 @@ function AmptieRaidTools_InitRoleRoster(body)
         end)
     end
 
+    panel.noOuterScroll = true
     AmptieRaidTools_RegisterComponent("roleroster", panel)
 
     -- Add self to roster immediately

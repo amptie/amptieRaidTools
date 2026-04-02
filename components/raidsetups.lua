@@ -664,11 +664,9 @@ function AmptieRaidTools_InitRaidSetups(body)
 				this:SetBackdropBorderColor(0.25, 0.25, 0.30, 1)
 				RefreshSlotVisual(myG, myS)   -- lock if text present
 			end)
-			eb:SetScript("OnEnterPressed", function()
-				this:ClearFocus()             -- triggers OnEditFocusLost → lock
-			end)
 			eb:SetScript("OnEscapePressed", function() this:ClearFocus() end)
-			eb:SetScript("OnTabPressed", function()
+			local function DoTabNext()
+				this:ClearFocus()             -- triggers OnEditFocusLost → lock
 				local ns = myS + 1
 				local ng = myG
 				if ns > NUM_SLOTS then ns = 1; ng = ng + 1 end
@@ -690,7 +688,9 @@ function AmptieRaidTools_InitRaidSetups(body)
 					nextEB:SetFocus()
 					nextEB:HighlightText()
 				end
-			end)
+			end
+			eb:SetScript("OnEnterPressed", DoTabNext)
+			eb:SetScript("OnTabPressed",   DoTabNext)
 			eb:SetAutoFocus(false)
 			eb:SetMaxLetters(24)
 			groupEBs[g][s] = eb
@@ -909,6 +909,7 @@ function AmptieRaidTools_InitRaidSetups(body)
 		ceEB:HighlightText()
 	end)
 
+	panel.noOuterScroll = true
 	AmptieRaidTools_RegisterComponent("raidsetups", panel)
 end
 

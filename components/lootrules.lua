@@ -1082,7 +1082,7 @@ local function CreateCouncilFrame()
     -- Scrollable rows area
     local rowSF = CreateFrame("ScrollFrame","ART_LC_RowSF",f)
     rowSF:SetPoint("TOPLEFT",    f,"TOPLEFT",  12, -104)
-    rowSF:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-26, 38)
+    rowSF:SetPoint("BOTTOMRIGHT",f,"BOTTOMRIGHT",-6, 38)
     rowSF:EnableMouseWheel(true)
 
     local rowContent = CreateFrame("Frame",nil,rowSF)
@@ -1090,34 +1090,14 @@ local function CreateCouncilFrame()
     rowContent:SetHeight(CROW_N * CROW_H)
     rowSF:SetScrollChild(rowContent)
 
-    local rowSlider = CreateFrame("Slider","ART_LC_RowSlider",f)
-    rowSlider:SetOrientation("VERTICAL")
-    rowSlider:SetPoint("TOPRIGHT",    f,"TOPRIGHT",  -8,-104)
-    rowSlider:SetPoint("BOTTOMRIGHT", f,"BOTTOMRIGHT",-8,  38)
-    rowSlider:SetWidth(12)
-    rowSlider:SetBackdrop({
-        bgFile="Interface\\Buttons\\UI-SliderBar-Background",
-        edgeFile="Interface\\Buttons\\UI-SliderBar-Border",
-        tile=true, tileSize=8, edgeSize=8,
-        insets={left=3,right=3,top=6,bottom=6},
-    })
-    rowSlider:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    rowSlider:SetMinMaxValues(0,0); rowSlider:SetValue(0)
-    rowSlider:SetScript("OnValueChanged",function()
-        rowSF:SetVerticalScroll(this:GetValue())
-    end)
     rowSF:SetScript("OnMouseWheel",function()
-        local mn, mx = rowSlider:GetMinMaxValues()
         local step = CROW_H * 3
-        if arg1 > 0 then
-            rowSlider:SetValue(math.max(mn, rowSlider:GetValue()-step))
-        else
-            rowSlider:SetValue(math.min(mx, rowSlider:GetValue()+step))
-        end
+        local maxScroll = math.max(0, rowContent:GetHeight() - rowSF:GetHeight())
+        local newVal = rowSF:GetVerticalScroll() + (arg1 > 0 and -step or step)
+        rowSF:SetVerticalScroll(math.max(0, math.min(maxScroll, newVal)))
     end)
     f.rowSF      = rowSF
     f.rowContent = rowContent
-    f.rowSlider  = rowSlider
 
     -- rows (children of rowContent, not the outer frame)
     local rows = {}
@@ -1478,11 +1458,9 @@ RefreshCouncilRows = function()
     local sfH = councilFrame.rowSF:GetHeight()
     if sfH and sfH > 0 then
         local maxScroll = math.max(0, contentH - sfH)
-        councilFrame.rowSlider:SetMinMaxValues(0, maxScroll)
         -- clamp current scroll position if content shrank
-        local cur = councilFrame.rowSlider:GetValue()
+        local cur = councilFrame.rowSF:GetVerticalScroll()
         if cur > maxScroll then
-            councilFrame.rowSlider:SetValue(maxScroll)
             councilFrame.rowSF:SetVerticalScroll(maxScroll)
         end
     end
@@ -1596,7 +1574,6 @@ OpenCouncilFrame = function()
     UpdateCouncilNav()
     councilFrame.timerFS:SetText("")
     -- reset scroll to top when opening fresh
-    councilFrame.rowSlider:SetValue(0)
     councilFrame.rowSF:SetVerticalScroll(0)
     RefreshCouncilRows()
     councilFrame:Show()
@@ -2672,7 +2649,7 @@ local function CreateLRRightPanel(panel)
     -- Scrollable settings area (below mode buttons)
     local settingsSF = CreateFrame("ScrollFrame","ART_LR_SettingsSF",rf)
     settingsSF:SetPoint("TOPLEFT",    rf,"TOPLEFT",     0,-76)
-    settingsSF:SetPoint("BOTTOMRIGHT",rf,"BOTTOMRIGHT",-18,  0)
+    settingsSF:SetPoint("BOTTOMRIGHT",rf,"BOTTOMRIGHT", -2,  0)
     settingsSF:EnableMouseWheel(true)
 
     local settingsChild = CreateFrame("Frame",nil,settingsSF)
@@ -2680,38 +2657,14 @@ local function CreateLRRightPanel(panel)
     settingsChild:SetHeight(40)   -- updated in RebuildRightPanel
     settingsSF:SetScrollChild(settingsChild)
 
-    -- Vertical scrollbar
-    local settingsSlider = CreateFrame("Slider","ART_LR_SettingsSlider",rf)
-    settingsSlider:SetOrientation("VERTICAL")
-    settingsSlider:SetPoint("TOPRIGHT",   rf,"TOPRIGHT",   0,-76)
-    settingsSlider:SetPoint("BOTTOMRIGHT",rf,"BOTTOMRIGHT",0,  0)
-    settingsSlider:SetWidth(16)
-    settingsSlider:SetBackdrop({
-        bgFile="Interface\\Buttons\\UI-SliderBar-Background",
-        edgeFile="Interface\\Buttons\\UI-SliderBar-Border",
-        tile=true,tileSize=8,edgeSize=8,
-        insets={left=3,right=3,top=6,bottom=6},
-    })
-    settingsSlider:SetBackdropColor(0.1,0.1,0.12,1)
-    settingsSlider:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    settingsSlider:SetMinMaxValues(0,0)
-    settingsSlider:SetValue(0)
-    settingsSlider:SetValueStep(1)
-    settingsSlider:SetScript("OnValueChanged",function()
-        settingsSF:SetVerticalScroll(this:GetValue())
-    end)
     settingsSF:SetScript("OnMouseWheel",function()
-        local mn, mx = settingsSlider:GetMinMaxValues()
         local step = 30
-        if arg1 > 0 then
-            settingsSlider:SetValue(math.max(mn, settingsSlider:GetValue()-step))
-        else
-            settingsSlider:SetValue(math.min(mx, settingsSlider:GetValue()+step))
-        end
+        local maxScroll = math.max(0, settingsChild:GetHeight() - settingsSF:GetHeight())
+        local newVal = settingsSF:GetVerticalScroll() + (arg1 > 0 and -step or step)
+        settingsSF:SetVerticalScroll(math.max(0, math.min(maxScroll, newVal)))
     end)
-    rf.settingsSF     = settingsSF
-    rf.settingsSlider = settingsSlider
-    rf.settingsChild  = settingsChild
+    rf.settingsSF    = settingsSF
+    rf.settingsChild = settingsChild
 
     -- ---- "none" sub-frame ----
     local noneF = CreateFrame("Frame",nil,settingsChild)
@@ -3051,10 +3004,7 @@ local function CreateLRRightPanel(panel)
         lcF:SetHeight(totalH)
         settingsChild:SetHeight(totalH)
         local sfH = settingsSF:GetHeight()
-        if sfH and sfH > 0 then
-            local maxS = math.max(0, totalH - sfH)
-            settingsSlider:SetMinMaxValues(0, maxS)
-        end
+        -- settingsSF handles scroll range automatically via GetVerticalScroll
     end)
 
     offSaveBtn:SetScript("OnClick",function()
@@ -3191,12 +3141,7 @@ local function CreateLRRightPanel(panel)
         -- Update scroll child height and slider range
         settingsChild:SetHeight(contentH)
         local sfH = settingsSF:GetHeight()
-        if sfH and sfH > 0 then
-            local maxScroll = math.max(0, contentH - sfH)
-            settingsSlider:SetMinMaxValues(0, maxScroll)
-            settingsSlider:SetValue(0)
-            settingsSF:SetVerticalScroll(0)
-        end
+        settingsSF:SetVerticalScroll(0)
     end
 
     return rf
@@ -3208,6 +3153,7 @@ end
 function AmptieRaidTools_InitLootRules(body)
     local panel = CreateFrame("Frame","ART_LootRulesPanel",body)
     panel:SetAllPoints(body)
+    panel.noOuterScroll = true
     AmptieRaidTools_RegisterComponent("lootrules", panel)
     lrPanelRef = panel
 

@@ -992,15 +992,45 @@ function AmptieRaidTools_InitNPCTrading(body)
 	RefreshCustomRows()
 
 	frame.contentHeight = 820
-
+	frame.noOuterScroll = true
 	AmptieRaidTools_RegisterComponent("npctrading", frame)
 end
 
 -- Event-Frame: Beim Öffnen eines Händlers graue Items verkaufen und Reagenzien nachkaufen
 local npcEventFrame = CreateFrame("Frame", "AmptieRaidToolsNPCTradingEventFrame", UIParent)
 npcEventFrame:RegisterEvent("MERCHANT_SHOW")
+npcEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 npcEventFrame:SetScript("OnEvent", function()
 	local evt = event
+	if evt == "PLAYER_ENTERING_WORLD" then
+		-- Remove class material entries that don't belong to the current class
+		local _, playerClass = UnitClass("player")
+		playerClass = playerClass and string.upper(playerClass) or ""
+		local npc = GetDB()
+
+		-- Build set of all valid material names for this class
+		local validMats = {}
+		for cls, list in pairs(CLASS_MATERIALS) do
+			if cls == playerClass then
+				for i = 1, getn(list) do
+					validMats[list[i].name] = true
+				end
+			end
+		end
+		-- Remove materials not belonging to this class
+		for itemName in pairs(npc.materials) do
+			if not validMats[itemName] then
+				npc.materials[itemName] = nil
+			end
+		end
+		-- Rogue poisons: wipe if not a Rogue
+		if playerClass ~= "ROGUE" and npc.roguePoisons then
+			for k in pairs(npc.roguePoisons) do
+				npc.roguePoisons[k] = nil
+			end
+		end
+		return
+	end
 	if evt == "MERCHANT_SHOW" then
 		local npc = GetDB()
 		if npc.autoSellGrey then

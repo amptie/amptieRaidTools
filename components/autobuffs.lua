@@ -24,6 +24,7 @@ local ART_AB_Categories = {
 		"Blessing of Light",       "Greater Blessing of Light",
 		"Blessing of Sanctuary",   "Greater Blessing of Sanctuary",
 		"Daybreak",                "Holy Power",
+		"Hand of Protection",
 	}},
 	{ cat = "Priest", buffs = {
 		"Power Word: Fortitude",   "Prayer of Fortitude",
@@ -39,6 +40,7 @@ local ART_AB_Categories = {
 		"Mark of the Wild",        "Gift of the Wild",
 		"Thorns",                  "Rejuvenation",
 		"Regrowth",                "Blessing of the Claw",
+		"Ride of the Wild",
 	}},
 	{ cat = "Warlock", buffs = {
 		"Detect Invisibility",     "Detect Greater Invisibility",
@@ -549,9 +551,10 @@ function AmptieRaidTools_InitAutoBuffs(body)
 		MAGE    = { "Arcane", "Fire", "Frost" },
 		DRUID   = { "Balance", "Feral Cat", "Feral Bear", "Restoration" },
 		ROGUE   = { "Assassination", "Combat", "Subtlety" },
-		SHAMAN  = { "Elemental", "Spellhancer", "Enhancement", "Enhancement Tank", "Restoration" },
+		SHAMAN  = { "Elemental", "Spellhancer", "Spellhancer Tank", "Enhancement", "Enhancement Tank", "Restoration" },
 		HUNTER  = { "Beastmaster", "Marksman", "Survival" },
 		PRIEST  = { "Discipline Smite", "Discipline Holy", "Holy", "Shadow" },
+		WARLOCK = { "SM/Ruin", "Affliction", "Demonology", "Destruction Fire" },
 	}
 	local _, playerClass = UnitClass("player")
 	playerClass = playerClass and string.upper(tostring(playerClass)) or ""
@@ -872,5 +875,6 @@ function AmptieRaidTools_InitAutoBuffs(body)
 		SetScroll(0)
 	end)
 
+	panel.noOuterScroll = true
 	AmptieRaidTools_RegisterComponent("autobuffs", panel)
 end

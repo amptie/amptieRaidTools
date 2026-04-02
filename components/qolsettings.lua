@@ -103,10 +103,48 @@ local function QoL_IsGuildMate(name)
 end
 
 -- ============================================================
--- Dismount helper (hidden tooltip trick)
+-- Dismount helper (pfUI autoshift approach: scan tooltip body for speed text)
 -- ============================================================
 local qolTipFrame = CreateFrame("GameTooltip", "ART_QoL_Tip", UIParent, "GameTooltipTemplate")
 qolTipFrame:SetOwner(UIParent, "ANCHOR_NONE")
+
+-- pfUI mount detection patterns (tooltip description text, not buff name)
+local QOL_MOUNT_PATTERNS = {
+    -- deDE
+    "^Erh%öht Tempo um (.+)%%",
+    -- enUS
+    "^Increases speed by (.+)%%",
+    -- esES
+    "^Aumenta la velocidad en un (.+)%%",
+    -- frFR
+    "^Augmente la vitesse de (.+)%%",
+    -- ruRU
+    "^%S+ увеличена на (.+)%%",
+    -- koKR
+    "^이동 속도 (.+)%%만큼 증가",
+    -- zhCN
+    "^速度提高(.+)%%",
+    -- turtle-wow custom mounts
+    "speed based on", "Slow and steady", "Riding",
+    "Lento y constante", "Aumenta la velocidad",
+}
+
+-- pfUI error list: all errors that require dismount or form-cancel
+local QOL_DISMOUNT_ERRORS = {
+    SPELL_FAILED_NOT_MOUNTED,
+    ERR_ATTACK_MOUNTED,
+    ERR_TAXIPLAYERALREADYMOUNTED,
+    SPELL_FAILED_NOT_SHAPESHIFT,
+    SPELL_FAILED_NO_ITEMS_WHILE_SHAPESHIFTED,
+    SPELL_NOT_SHAPESHIFTED,
+    SPELL_NOT_SHAPESHIFTED_NOSPACE,
+    ERR_CANT_INTERACT_SHAPESHIFTED,
+    ERR_NOT_WHILE_SHAPESHIFTED,
+    ERR_NO_ITEMS_WHILE_SHAPESHIFTED,
+    ERR_TAXIPLAYERSHAPESHIFTED,
+    ERR_MOUNT_SHAPESHIFTED,
+    ERR_EMBLEMERROR_NOTABARDGEOSET,
+}
 
 -- LazyPig-style frame flags for Improved Right Click (IsShown() allein reicht nicht zuverlaessig)
 local artTradestatus = nil
@@ -116,23 +154,23 @@ local artBankstatus = nil
 local artMerchantstatus = nil
 
 local function QoL_Dismount()
-    local playerName = UnitName("player")
-    for i = 1, 40 do
-        local buffName, _, _, _, _, _, _, isStealable = UnitBuff("player", i)
-        if not buffName then break end
-        qolTipFrame:SetUnitBuff("player", i)
-        local line = ART_QoL_TipTextLeft1
-        if line then
-            local txt = line:GetText()
-            if txt and (strfind(txt, "Mount") or strfind(txt, "Riding") or strfind(txt, "Swift") or
-                        strfind(txt, "Steed") or strfind(txt, "Charger") or strfind(txt, "Raptor") or
-                        strfind(txt, "Wolf") or strfind(txt, "Gryphon") or strfind(txt, "Wyvern") or
-                        strfind(txt, "Ram") or strfind(txt, "Kodo") or strfind(txt, "Mechanostrider") or
-                        strfind(txt, "Frostsaber") or strfind(txt, "Nightsaber") or strfind(txt, "Skeletal") or
-                        strfind(txt, "Tiger") or strfind(txt, "Stormpike") or strfind(txt, "Dreadsteed") or
-                        strfind(txt, "Felsteed")) then
-                CancelPlayerBuff(i - 1)
-                return
+    -- pfUI approach: scan tooltip body text for speed increase patterns (0-indexed)
+    for i = 0, 31 do
+        qolTipFrame:SetOwner(UIParent, "ANCHOR_NONE")
+        qolTipFrame:SetPlayerBuff(i)
+        -- check all tooltip text lines (name on line 1, description on line 2+)
+        for lineIdx = 1, 5 do
+            local lineFrame = getglobal("ART_QoL_TipTextLeft" .. lineIdx)
+            if lineFrame then
+                local txt = lineFrame:GetText()
+                if txt then
+                    for _, pat in pairs(QOL_MOUNT_PATTERNS) do
+                        if strfind(txt, pat) then
+                            CancelPlayerBuff(i)
+                            return
+                        end
+                    end
+                end
             end
         end
     end
@@ -800,12 +838,25 @@ qolEventFrame:SetScript("OnEvent", function()
         QoL_ZoneCheck()
 
     elseif evt == "SPELL_FAILED_ONLY_SHAPESHIFT" then
-        if QDB("AUTOSTANCE") then
-            -- The client will cast the correct stance; just trigger dismount if mounted
-            if QDB("DISMOUNT") then QoL_Dismount() end
-        end
+        -- pfUI: dismount fires independently, auto-stance fires independently
+        if QDB("DISMOUNT") then QoL_Dismount() end
+        -- (client will cast the correct stance when AUTOSTANCE is on — no extra action needed)
 
     elseif evt == "UI_ERROR_MESSAGE" then
+        -- Auto-dismount: fire on all pfUI-style mount/shapeshift error messages
+        if QDB("DISMOUNT") and a1 then
+            for _, errStr in pairs(QOL_DISMOUNT_ERRORS) do
+                if a1 == errStr then
+                    -- don't cancel form when clicking NPCs in combat (pfUI behaviour)
+                    if a1 == ERR_CANT_INTERACT_SHAPESHIFTED and UnitAffectingCombat("player") then
+                        break
+                    end
+                    QoL_Dismount()
+                    break
+                end
+            end
+        end
+        -- Auto-stance: cancel druid form on shapeshift errors
         if QDB("AUTOSTANCE") and a1 and strfind(a1, "shapeshift") then
             QoL_CancelDruidForm()
         end

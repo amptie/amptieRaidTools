@@ -95,6 +95,14 @@ function AmptieRaidTools_ShowComponent(componentId)
 		if id == currentNavId then
 			frame:SetFrameLevel(bodyFrame:GetFrameLevel() + 10)
 			frame:Show()
+			-- Hide outer scrollbar for panels that manage their own scrolling
+			if bodyScrollBar then
+				if frame.noOuterScroll then
+					bodyScrollBar:Hide()
+				else
+					bodyScrollBar:Show()
+				end
+			end
 		else
 			frame:Hide()
 		end
@@ -242,13 +250,7 @@ local function CreateMainFrame()
 	body:SetHeight(SCROLL_CHILD_H)
 	bodyScroll:SetScrollChild(body)
 
-	-- Vertical scrollbar
-	local BACKDROP_SCROLLBAR = {
-		bgFile   = "Interface\\Buttons\\UI-SliderBar-Background",
-		edgeFile = "Interface\\Buttons\\UI-SliderBar-Border",
-		tile = true, tileSize = 8, edgeSize = 8,
-		insets = { left = 3, right = 3, top = 6, bottom = 6 },
-	}
+	-- Vertical scrollbar (modern style: solid track + solid thumb)
 	local VIEWPORT_H = FRAME_HEIGHT - TITLE_HEIGHT - 4 - 8
 	local MAX_SCROLL = SCROLL_CHILD_H - VIEWPORT_H
 
@@ -257,9 +259,14 @@ local function CreateMainFrame()
 	sb:SetPoint("TOPRIGHT",    f, "TOPRIGHT",    -8, -(TITLE_HEIGHT + 4))
 	sb:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
 	sb:SetWidth(SCROLLBAR_W)
-	sb:SetBackdrop(BACKDROP_SCROLLBAR)
-	sb:SetBackdropColor(0.05, 0.05, 0.07, 0.9)
-	sb:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Vertical")
+	local sbTrack = sb:CreateTexture(nil, "BACKGROUND")
+	sbTrack:SetAllPoints(sb)
+	sbTrack:SetTexture(0.12, 0.12, 0.15, 0.8)
+	local sbThumb = sb:CreateTexture(nil, "OVERLAY")
+	sbThumb:SetWidth(10)
+	sbThumb:SetHeight(24)
+	sbThumb:SetTexture(0.5, 0.5, 0.55, 0.9)
+	sb:SetThumbTexture(sbThumb)
 	sb:SetMinMaxValues(0, MAX_SCROLL)
 	sb:SetValue(0)
 	sb:SetScript("OnValueChanged", function()
@@ -353,8 +360,13 @@ local function CreateMinimapButton()
 		-- First use: place near the Minimap (top-right area).
 		local mmx, mmy = Minimap:GetCenter()
 		local ucx, ucy = UIParent:GetCenter()
-		DB.minimapX = mmx - ucx
-		DB.minimapY = mmy - ucy + 80
+		if mmx and mmy and ucx and ucy then
+			DB.minimapX = mmx - ucx
+			DB.minimapY = mmy - ucy + 80
+		else
+			DB.minimapX = 390
+			DB.minimapY = 270
+		end
 		mb:SetPoint("CENTER", UIParent, "CENTER", DB.minimapX, DB.minimapY)
 	end
 

@@ -3,6 +3,41 @@
 
 AmptieRaidTools_LastAnnouncedSpec = AmptieRaidTools_LastAnnouncedSpec or nil
 
+-- File-scope so the PLAYER_ENTERING_WORLD cleanup can use it
+local HOME_CLASS_ALT_ROLES = {
+	WARRIOR = { "Tank", "PhysDPS" },
+	PALADIN = { "Tank", "Healer", "PhysDPS" },
+	DRUID   = { "Tank", "Healer", "Caster", "PhysDPS" },
+	SHAMAN  = { "Tank", "Healer", "Caster", "PhysDPS" },
+	PRIEST  = { "Healer", "Caster" },
+	MAGE    = { "Caster" },
+	WARLOCK = { "Caster" },
+	ROGUE   = { "PhysDPS" },
+	HUNTER  = { "PhysDPS" },
+}
+
+local ART_Home_CleanupFrame = CreateFrame("Frame", "ART_Home_CleanupFrame", UIParent)
+ART_Home_CleanupFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+ART_Home_CleanupFrame:SetScript("OnEvent", function()
+	if not amptieRaidToolsDB or not amptieRaidToolsDB.altSpecs then return end
+	local _, playerClass = UnitClass("player")
+	playerClass = playerClass and string.upper(playerClass) or ""
+	local validRoles = HOME_CLASS_ALT_ROLES[playerClass]
+	-- Build fast lookup set
+	local validSet = {}
+	if validRoles then
+		for i = 1, table.getn(validRoles) do
+			validSet[validRoles[i]] = true
+		end
+	end
+	-- Remove any role keys that don't belong to this class
+	for role in pairs(amptieRaidToolsDB.altSpecs) do
+		if not validSet[role] then
+			amptieRaidToolsDB.altSpecs[role] = nil
+		end
+	end
+end)
+
 -- Role lookup table (global so other components can use it)
 -- Maps spec name → detailed sub-role
 ART_SPEC_ROLE = {
@@ -10,7 +45,8 @@ ART_SPEC_ROLE = {
 	["Protection"]       = "Tank",
 	["Fury Protection"]  = "Tank",
 	["Deep Protection"]  = "Tank",
-	["Enhancement Tank"] = "Tank",
+	["Enhancement Tank"]   = "Tank",
+	["Spellhancer Tank"]   = "Tank",
 	["Feral Bear"]       = "Tank",
 	-- Healer
 	["Holy"]             = "Healer",
@@ -93,6 +129,160 @@ function ART_GetSpecSubRole(spec)
 	return ART_SPEC_ROLE[spec] or "Close-up Melee"
 end
 
+-- ============================================================
+-- Profiles: serializer + modal (file-scope)
+-- ============================================================
+local getn = table.getn
+local tinsert = table.insert
+
+local function ART_SerializeVal(val)
+	local t = type(val)
+	if     t == "nil"     then return "nil"
+	elseif t == "boolean" then return val and "true" or "false"
+	elseif t == "number"  then return tostring(val)
+	elseif t == "string"  then return string.format("%q", val)
+	elseif t == "table"   then
+		local parts = {}
+		for k, v in pairs(val) do
+			local ks
+			if type(k) == "string" then
+				if string.find(k, "^[%a_][%w_]*$") then ks = k
+				else ks = "[" .. string.format("%q", k) .. "]" end
+			elseif type(k) == "number" then
+				ks = "[" .. tostring(k) .. "]"
+			end
+			if ks then tinsert(parts, ks .. "=" .. ART_SerializeVal(v)) end
+		end
+		return "{" .. table.concat(parts, ",") .. "}"
+	else
+		return "nil"
+	end
+end
+
+local artProfModal      = nil
+local artProfModalEB    = nil
+local artProfModalApply = nil
+local artProfImportCB   = nil
+
+local ART_HOME_BTN_BD = {
+	bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+	tile = true, tileSize = 16, edgeSize = 12,
+	insets = { left = 3, right = 3, top = 3, bottom = 3 },
+}
+local function ART_MakeBtn(parent, w, h, label)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetWidth(w)
+	b:SetHeight(h)
+	b:SetBackdrop(ART_HOME_BTN_BD)
+	b:SetBackdropColor(0.12, 0.12, 0.15, 0.95)
+	b:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+	b:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+	local fs = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	fs:SetPoint("CENTER", b, "CENTER", 0, 0)
+	fs:SetJustifyH("CENTER")
+	fs:SetText(label)
+	b.fs = fs
+	return b
+end
+
+local function ART_EnsureProfModal()
+	if artProfModal then return end
+
+	artProfModal = CreateFrame("Frame", "ART_ProfModal", UIParent)
+	artProfModal:SetFrameStrata("FULLSCREEN_DIALOG")
+	artProfModal:SetWidth(520)
+	artProfModal:SetHeight(420)
+	artProfModal:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+	artProfModal:SetMovable(true)
+	artProfModal:EnableMouse(true)
+	artProfModal:RegisterForDrag("LeftButton")
+	artProfModal:SetScript("OnDragStart", function() this:StartMoving() end)
+	artProfModal:SetScript("OnDragStop",  function() this:StopMovingOrSizing() end)
+	artProfModal:SetBackdrop({
+		bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile=true, tileSize=16, edgeSize=12,
+		insets={left=4,right=4,top=4,bottom=4},
+	})
+	artProfModal:SetBackdropColor(0.08, 0.08, 0.11, 0.97)
+	artProfModal:SetBackdropBorderColor(0.4, 0.4, 0.5, 1)
+	artProfModal:Hide()
+
+	local titleFS = artProfModal:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	titleFS:SetPoint("TOPLEFT", artProfModal, "TOPLEFT", 14, -14)
+	titleFS:SetTextColor(1, 0.82, 0, 1)
+	artProfModal.titleFS = titleFS
+
+	local descFS = artProfModal:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	descFS:SetPoint("TOPLEFT", titleFS, "BOTTOMLEFT", 0, -4)
+	descFS:SetWidth(490)
+	descFS:SetJustifyH("LEFT")
+	descFS:SetTextColor(0.75, 0.75, 0.75, 1)
+	artProfModal.descFS = descFS
+
+	-- ScrollFrame + EditBox
+	local sf = CreateFrame("ScrollFrame", "ART_ProfModalSF", artProfModal, "UIPanelScrollFrameTemplate")
+	sf:SetPoint("TOPLEFT",     artProfModal, "TOPLEFT",     10, -62)
+	sf:SetPoint("BOTTOMRIGHT", artProfModal, "BOTTOMRIGHT", -30, 46)
+
+	local eb = CreateFrame("EditBox", "ART_ProfModalEB", sf)
+	eb:SetMultiLine(1)
+	eb:SetAutoFocus(0)
+	eb:SetFontObject(ChatFontNormal)
+	eb:SetWidth(470)
+	eb:SetHeight(600)
+	eb:SetMaxLetters(0)
+	eb:SetScript("OnEscapePressed", function() artProfModal:Hide() end)
+	sf:SetScrollChild(eb)
+	artProfModalEB = eb
+
+	-- Close button
+	local closeBtn = ART_MakeBtn(artProfModal, 80, 22, "Close")
+	closeBtn:SetPoint("BOTTOMRIGHT", artProfModal, "BOTTOMRIGHT", -10, 10)
+	closeBtn:SetScript("OnClick", function() artProfModal:Hide() end)
+
+	-- Select All button
+	local selAllBtn = ART_MakeBtn(artProfModal, 90, 22, "Select All")
+	selAllBtn:SetPoint("BOTTOMRIGHT", closeBtn, "BOTTOMLEFT", -6, 0)
+	selAllBtn:SetScript("OnClick", function()
+		artProfModalEB:SetFocus()
+		artProfModalEB:HighlightText()
+	end)
+
+	-- Apply button (import only)
+	local applyBtn = ART_MakeBtn(artProfModal, 80, 22, "Apply")
+	applyBtn:SetPoint("BOTTOMLEFT", artProfModal, "BOTTOMLEFT", 10, 10)
+	applyBtn:SetScript("OnClick", function()
+		if artProfImportCB then artProfImportCB(artProfModalEB:GetText()) end
+		artProfModal:Hide()
+	end)
+	applyBtn:Hide()
+	artProfModalApply = applyBtn
+end
+
+local function ART_ShowExportModal(str)
+	ART_EnsureProfModal()
+	artProfModal.titleFS:SetText("Export Settings")
+	artProfModal.descFS:SetText("Copy this string (Select All, then Ctrl+C) and paste it on another character.")
+	artProfModalEB:SetText(str)
+	artProfModalApply:Hide()
+	artProfModal:Show()
+	artProfModalEB:SetFocus()
+	artProfModalEB:HighlightText()
+end
+
+local function ART_ShowImportModal(callback)
+	ART_EnsureProfModal()
+	artProfModal.titleFS:SetText("Import Settings")
+	artProfModal.descFS:SetText("Paste the export string here, then click Apply.")
+	artProfModalEB:SetText("")
+	artProfImportCB = callback
+	artProfModalApply:Show()
+	artProfModal:Show()
+	artProfModalEB:SetFocus()
+end
+
 function AmptieRaidTools_InitHome(body)
 	local frame = CreateFrame("Frame", "AmptieRaidToolsHomePanel", body)
 	frame:SetAllPoints(body)
@@ -172,7 +362,10 @@ function AmptieRaidTools_InitHome(body)
 	local function GetShamanSpecHere()
 		if GetTalentRankHere(3, 15) == 5 then return "Restoration" end
 		if GetTalentRankHere(1, 17) == 1 then return "Elemental" end
-		if GetTalentRankHere(2, 13) == 3 and GetTalentRankHere(1, 15) == 2 then return "Spellhancer" end
+		if GetTalentRankHere(2, 13) == 3 and GetTalentRankHere(1, 15) == 2 then
+			if GetTalentRankHere(2, 3) == 2 then return "Spellhancer Tank" end
+			return "Spellhancer"
+		end
 		if GetTalentRankHere(2, 15) == 5 then
 			if GetTalentRankHere(2, 11) == 2 then return "Enhancement Tank" end
 			if GetTalentRankHere(2, 11) == 0 then return "Enhancement" end
@@ -437,18 +630,8 @@ function AmptieRaidTools_InitHome(body)
 	altDesc:SetText("Select roles you could fill as an alternative, and your gear level for each.")
 	altDesc:SetTextColor(0.75, 0.75, 0.75, 1)
 
-	-- Which roles each class may offer as alternatives
-	local CLASS_ALT_ROLES = {
-		WARRIOR = { "Tank", "PhysDPS" },
-		PALADIN = { "Tank", "Healer", "PhysDPS" },
-		DRUID   = { "Tank", "Healer", "Caster", "PhysDPS" },
-		SHAMAN  = { "Tank", "Healer", "Caster", "PhysDPS" },
-		PRIEST  = { "Healer", "Caster" },
-		MAGE    = { "Caster" },
-		WARLOCK = { "Caster" },
-		ROGUE   = { "PhysDPS" },
-		HUNTER  = { "PhysDPS" },
-	}
+	-- Which roles each class may offer as alternatives (references file-scope table)
+	local CLASS_ALT_ROLES = HOME_CLASS_ALT_ROLES
 
 	local ALT_ROLE_ICON = {
 		Tank    = "Interface\\Icons\\INV_Shield_04",
@@ -636,6 +819,165 @@ function AmptieRaidTools_InitHome(body)
 
 	BuildAltSpecsForClass()
 
+	-- ── Separator before Profiles ──────────────────────────────
+	local homeSep3 = frame:CreateTexture(nil, "ARTWORK")
+	homeSep3:SetHeight(1)
+	homeSep3:SetTexture(0.35, 0.35, 0.4, 0.5)
+	homeSep3:SetPoint("TOPLEFT",  altDesc, "BOTTOMLEFT", 0, -100)
+	homeSep3:SetPoint("TOPRIGHT", frame,   "TOPRIGHT",  -12, 0)
+
+	local profHdr = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	profHdr:SetPoint("TOPLEFT", homeSep3, "BOTTOMLEFT", 0, -10)
+	profHdr:SetText("Profiles")
+	profHdr:SetTextColor(1, 0.82, 0, 1)
+
+	local profDescFS = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	profDescFS:SetPoint("TOPLEFT", profHdr, "BOTTOMLEFT", 0, -4)
+	profDescFS:SetWidth(420)
+	profDescFS:SetJustifyH("LEFT")
+	profDescFS:SetText("Export and import settings across characters. Select which sections to include.")
+	profDescFS:SetTextColor(0.75, 0.75, 0.75, 1)
+
+	-- Checkboxes (2 rows × 3 cols)
+	local PROF_SECTIONS = {
+		{ key="autorolls",  label="Auto-Rolls"   },
+		{ key="itemchecks", label="Item Checks"  },
+		{ key="buffchecks", label="Buff Checks"  },
+		{ key="classbuffs", label="Class Buffs"  },
+		{ key="lootrules",  label="Loot Rules"   },
+		{ key="qol",        label="QoL Settings" },
+	}
+	local profChecked = {}
+	for i = 1, getn(PROF_SECTIONS) do
+		profChecked[PROF_SECTIONS[i].key] = true
+	end
+
+	local PCOL_W = 145
+	local PROW_H = 24
+	for i = 1, getn(PROF_SECTIONS) do
+		local sec = PROF_SECTIONS[i]
+		local col = math.mod(i - 1, 3)
+		local row = math.floor((i - 1) / 3)
+		local xOff = col * PCOL_W
+		local yOff = -(row * PROW_H + 12)
+
+		local cb = CreateFrame("CheckButton", nil, frame)
+		cb:SetWidth(20)
+		cb:SetHeight(20)
+		cb:SetPoint("TOPLEFT", profDescFS, "BOTTOMLEFT", xOff, yOff)
+		cb:SetNormalTexture("Interface\\Buttons\\UI-CheckBox-Up")
+		cb:SetPushedTexture("Interface\\Buttons\\UI-CheckBox-Down")
+		cb:SetHighlightTexture("Interface\\Buttons\\UI-CheckBox-Highlight")
+		cb:SetCheckedTexture("Interface\\Buttons\\UI-CheckBox-Check")
+		cb:SetChecked(1)
+
+		local lbl = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		lbl:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+		lbl:SetText(sec.label)
+		lbl:SetTextColor(0.85, 0.85, 0.85, 1)
+
+		local secKey = sec.key
+		cb:SetScript("OnClick", function()
+			profChecked[secKey] = (this:GetChecked() == 1)
+		end)
+	end
+
+	-- Export / Import buttons
+	local profExportBtn = ART_MakeBtn(frame, 120, 22, "Export Selected")
+	profExportBtn:SetPoint("TOPLEFT", profDescFS, "BOTTOMLEFT", 0, -(PROW_H * 2 + 22))
+	profExportBtn:SetScript("OnClick", function()
+		local db = amptieRaidToolsDB
+		if not db then return end
+		local data = {}
+
+		if profChecked["autorolls"] and db.autorolls then
+			data.autorolls = db.autorolls
+		end
+		if profChecked["itemchecks"] then
+			if db.itemCheckProfiles    then data.itemCheckProfiles    = db.itemCheckProfiles    end
+			if db.activeItemCheckProfile then data.activeItemCheckProfile = db.activeItemCheckProfile end
+		end
+		if profChecked["buffchecks"] then
+			if db.buffCheckProfiles then data.buffCheckProfiles = db.buffCheckProfiles end
+			if db.activeBCProfile   then data.activeBCProfile   = db.activeBCProfile   end
+		end
+		if profChecked["classbuffs"] and db.classbuffs then
+			local cb = {}
+			for k, v in pairs(db.classbuffs) do
+				if k ~= "ovlX" and k ~= "ovlY" then cb[k] = v end
+			end
+			data.classbuffs = cb
+		end
+		if profChecked["lootrules"] then
+			if db.lootProfiles    then data.lootProfiles    = db.lootProfiles    end
+			if db.activeLRProfile then data.activeLRProfile = db.activeLRProfile end
+			if db.lrZoneBindings  then data.lrZoneBindings  = db.lrZoneBindings  end
+		end
+		if profChecked["qol"] and db.qolSettings then
+			data.qolSettings = db.qolSettings
+		end
+
+		ART_ShowExportModal("ART:" .. ART_SerializeVal(data))
+	end)
+
+	local profImportBtn = ART_MakeBtn(frame, 80, 22, "Import")
+	profImportBtn:SetPoint("LEFT", profExportBtn, "RIGHT", 8, 0)
+	profImportBtn:SetScript("OnClick", function()
+		ART_ShowImportModal(function(str)
+			if string.sub(str, 1, 4) ~= "ART:" then
+				DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[aRT]|r Import failed: invalid format.")
+				return
+			end
+			local dataStr = string.sub(str, 5)
+			local fn, parseErr = loadstring("return " .. dataStr)
+			if not fn then
+				DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[aRT]|r Import failed: " .. (parseErr or "parse error"))
+				return
+			end
+			local ok, data = pcall(fn)
+			if not ok or type(data) ~= "table" then
+				DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[aRT]|r Import failed: invalid data.")
+				return
+			end
+
+			local idb = amptieRaidToolsDB
+			if not idb then return end
+			local count = 0
+
+			if data.autorolls then
+				idb.autorolls = data.autorolls
+				count = count + 1
+			end
+			if data.itemCheckProfiles or data.activeItemCheckProfile then
+				if data.itemCheckProfiles     then idb.itemCheckProfiles     = data.itemCheckProfiles     end
+				if data.activeItemCheckProfile then idb.activeItemCheckProfile = data.activeItemCheckProfile end
+				count = count + 1
+			end
+			if data.buffCheckProfiles or data.activeBCProfile then
+				if data.buffCheckProfiles then idb.buffCheckProfiles = data.buffCheckProfiles end
+				if data.activeBCProfile   then idb.activeBCProfile   = data.activeBCProfile   end
+				count = count + 1
+			end
+			if data.classbuffs then
+				if not idb.classbuffs then idb.classbuffs = {} end
+				for k, v in pairs(data.classbuffs) do idb.classbuffs[k] = v end
+				count = count + 1
+			end
+			if data.lootProfiles or data.activeLRProfile or data.lrZoneBindings then
+				if data.lootProfiles    then idb.lootProfiles    = data.lootProfiles    end
+				if data.activeLRProfile then idb.activeLRProfile = data.activeLRProfile end
+				if data.lrZoneBindings  then idb.lrZoneBindings  = data.lrZoneBindings  end
+				count = count + 1
+			end
+			if data.qolSettings then
+				idb.qolSettings = data.qolSettings
+				count = count + 1
+			end
+
+			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Imported " .. count .. " section(s). Reload UI (/reload) for full effect.")
+		end)
+	end)
+
 	frame:SetScript("OnShow", function()
 		RefreshAll()
 		RefreshSalvButtons()
@@ -645,6 +987,6 @@ function AmptieRaidTools_InitHome(body)
 	end)
 	RefreshAll()
 
-	frame.contentHeight = 380
+	frame.contentHeight = 560
 	AmptieRaidTools_RegisterComponent("home", frame)
 end
