@@ -673,13 +673,13 @@ function AmptieRaidTools_InitHome(body)
 		dd:SetWidth(100)
 		dd:SetHeight(getn(GEAR_TIERS) * 22 + 6)
 		dd:SetBackdrop({
-			bgFile="Interface\\Tooltips\\UI-Tooltip-Background",
+			bgFile="Interface\\ChatFrame\\ChatFrameBackground",
 			edgeFile="Interface\\Tooltips\\UI-Tooltip-Border",
 			tile=true, tileSize=16, edgeSize=10,
 			insets={left=3,right=3,top=3,bottom=3},
 		})
-		dd:SetBackdropColor(0.08, 0.08, 0.11, 0.97)
-		dd:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+		dd:SetBackdropColor(0.08, 0.08, 0.11, 1.0)
+		dd:SetBackdropBorderColor(0.5, 0.5, 0.6, 1)
 		dd:Hide()
 
 		for i = 1, getn(GEAR_TIERS) do
@@ -782,7 +782,7 @@ function AmptieRaidTools_InitHome(body)
 					tierDD:Hide()
 				else
 					tierDD:ClearAllPoints()
-					tierDD:SetPoint("TOP", this, "BOTTOM", 0, -2)
+					tierDD:SetPoint("TOPLEFT", this, "BOTTOMLEFT", 0, -2)
 					tierDD:Show()
 				end
 			end)
@@ -838,14 +838,15 @@ function AmptieRaidTools_InitHome(body)
 	profDescFS:SetText("Export and import settings across characters. Select which sections to include.")
 	profDescFS:SetTextColor(0.75, 0.75, 0.75, 1)
 
-	-- Checkboxes (2 rows × 3 cols)
+	-- Checkboxes (3 rows × 3 cols)
 	local PROF_SECTIONS = {
-		{ key="autorolls",  label="Auto-Rolls"   },
-		{ key="itemchecks", label="Item Checks"  },
-		{ key="buffchecks", label="Buff Checks"  },
-		{ key="classbuffs", label="Class Buffs"  },
-		{ key="lootrules",  label="Loot Rules"   },
-		{ key="qol",        label="QoL Settings" },
+		{ key="autorolls",   label="Auto-Rolls"    },
+		{ key="itemchecks",  label="Item Checks"   },
+		{ key="buffchecks",  label="Buff Checks"   },
+		{ key="classbuffs",  label="Class Buffs"   },
+		{ key="lootrules",   label="Loot Rules"    },
+		{ key="qol",         label="QoL Settings"  },
+		{ key="autoassists", label="Auto-Assists"  },
 	}
 	local profChecked = {}
 	for i = 1, getn(PROF_SECTIONS) do
@@ -884,7 +885,7 @@ function AmptieRaidTools_InitHome(body)
 
 	-- Export / Import buttons
 	local profExportBtn = ART_MakeBtn(frame, 120, 22, "Export Selected")
-	profExportBtn:SetPoint("TOPLEFT", profDescFS, "BOTTOMLEFT", 0, -(PROW_H * 2 + 22))
+	profExportBtn:SetPoint("TOPLEFT", profDescFS, "BOTTOMLEFT", 0, -(PROW_H * 3 + 22))
 	profExportBtn:SetScript("OnClick", function()
 		local db = amptieRaidToolsDB
 		if not db then return end
@@ -915,6 +916,9 @@ function AmptieRaidTools_InitHome(body)
 		end
 		if profChecked["qol"] and db.qolSettings then
 			data.qolSettings = db.qolSettings
+		end
+		if profChecked["autoassists"] and db.raidAssists and db.raidAssists.autoAssists then
+			data.autoAssists = db.raidAssists.autoAssists
 		end
 
 		ART_ShowExportModal("ART:" .. ART_SerializeVal(data))
@@ -951,6 +955,7 @@ function AmptieRaidTools_InitHome(body)
 			if data.itemCheckProfiles or data.activeItemCheckProfile then
 				if data.itemCheckProfiles     then idb.itemCheckProfiles     = data.itemCheckProfiles     end
 				if data.activeItemCheckProfile then idb.activeItemCheckProfile = data.activeItemCheckProfile end
+				if ART_IC_OnProfilesImported then ART_IC_OnProfilesImported() end
 				count = count + 1
 			end
 			if data.buffCheckProfiles or data.activeBCProfile then
@@ -967,10 +972,16 @@ function AmptieRaidTools_InitHome(body)
 				if data.lootProfiles    then idb.lootProfiles    = data.lootProfiles    end
 				if data.activeLRProfile then idb.activeLRProfile = data.activeLRProfile end
 				if data.lrZoneBindings  then idb.lrZoneBindings  = data.lrZoneBindings  end
+				if ART_LR_OnProfilesImported then ART_LR_OnProfilesImported() end
 				count = count + 1
 			end
 			if data.qolSettings then
 				idb.qolSettings = data.qolSettings
+				count = count + 1
+			end
+			if data.autoAssists then
+				if not idb.raidAssists then idb.raidAssists = {} end
+				idb.raidAssists.autoAssists = data.autoAssists
 				count = count + 1
 			end
 

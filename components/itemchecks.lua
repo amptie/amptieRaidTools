@@ -1508,6 +1508,12 @@ function AmptieRaidTools_InitItemChecks(body)
     GetICDB()  -- ensure defaults exist
     RefreshProfileList()
     RefreshRuleList()
+
+    ART_IC_OnProfilesImported = function()
+        GetICDB()
+        RefreshProfileList()
+        RefreshRuleList()
+    end
 end
 
 -- ============================================================

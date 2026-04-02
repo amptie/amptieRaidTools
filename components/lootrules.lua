@@ -2605,6 +2605,11 @@ local function CreateLRLeftPanel(panel)
     end)
 
     panel.refreshProfList = RefreshProfList
+    ART_LR_OnProfilesImported = function()
+        GetLRDB()
+        RefreshProfList()
+        RebuildRightPanel()
+    end
     return RefreshProfList
 end
 
