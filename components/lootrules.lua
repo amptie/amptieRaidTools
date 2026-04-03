@@ -51,26 +51,45 @@ local QUALITY_COLORS = {
 
 -- ============================================================
 -- Zone table
+-- zones = extra zone names beyond the primary "zone" field (e.g. multi-wing instances)
+-- minRaid/maxRaid = raid size guards (for distinguishing 10- vs 40-man variants)
 -- ============================================================
 local ART_LR_ZONES = {
-    { key="mc",      label="Molten Core",    zone="Molten Core"           },
-    { key="ony",     label="Onyxia's Lair",  zone="Onyxia's Lair"         },
-    { key="bwl",     label="Blackwing Lair", zone="Blackwing Lair"        },
-    { key="zg",      label="Zul'Gurub",      zone="Zul'Gurub"             },
-    { key="aq20",    label="Ruins of AQ",    zone="Ruins of Ahn'Qiraj"    },
-    { key="aq40",    label="Temple of AQ",   zone="Ahn'Qiraj"             },
-    { key="naxx",    label="Naxxramas",      zone="Naxxramas"             },
-    { key="kara",    label="Karazhan",       zone="Karazhan"              },
-    { key="outraid", label="Out of Raid",    zone=nil                     },
+    { key="mc",      label="Molten Core",         zone="Molten Core"            },
+    { key="ony",     label="Onyxia's Lair",        zone="Onyxia's Lair"          },
+    { key="bwl",     label="Blackwing Lair",       zone="Blackwing Lair"         },
+    { key="zg",      label="Zul'Gurub",            zone="Zul'Gurub"              },
+    { key="aq20",    label="Ruins of AQ",          zone="Ruins of Ahn'Qiraj"     },
+    { key="aq40",    label="Temple of AQ",         zone="Temple of Ahn'Qiraj"    },
+    { key="naxx",    label="Naxxramas",            zone="Naxxramas"              },
+    { key="kara10",  label="Karazhan (10-man)",    zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, maxRaid=24 },
+    { key="kara40",  label="Karazhan (40-man)",    zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, minRaid=25 },
+    { key="outraid", label="Out of Raid",          zone=nil                      },
 }
 
 local function GetCurrentLRZoneKey()
     local zone = GetRealZoneText()
+    if not zone then return "outraid" end
+    local n = GetNumRaidMembers() or 0
     for i = 1, getn(ART_LR_ZONES) do
         local z = ART_LR_ZONES[i]
-        if z.zone and z.zone == zone then return z.key end
+        if z.zone then
+            -- check primary zone name
+            local match = (z.zone == zone)
+            -- check additional zone names
+            if not match and z.zones then
+                for j = 1, getn(z.zones) do
+                    if z.zones[j] == zone then match = true; break end
+                end
+            end
+            if match then
+                if (not z.minRaid or n >= z.minRaid) and (not z.maxRaid or n <= z.maxRaid) then
+                    return z.key
+                end
+            end
+        end
     end
-    return "outraid"   -- no raid zone matched → outside any raid
+    return "outraid"
 end
 
 -- ============================================================
@@ -2184,8 +2203,11 @@ local function ApplyLRZoneBinding()
 end
 
 local lcZoneFrame = CreateFrame("Frame","ART_LC_ZoneFrame",UIParent)
+lcZoneFrame:RegisterEvent("PLAYER_LOGIN")
 lcZoneFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 lcZoneFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+lcZoneFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+lcZoneFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 lcZoneFrame:SetScript("OnEvent",function() ApplyLRZoneBinding() end)
 
 -- ============================================================

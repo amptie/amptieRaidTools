@@ -7,6 +7,7 @@
 ART_BarProfiles          = ART_BarProfiles          or {}
 ART_ActiveBarProfileName = ART_ActiveBarProfileName  or "none"
 ART_BarSpecBindings      = ART_BarSpecBindings       or {}
+ART_ItemSetBindings      = ART_ItemSetBindings       or {}
 
 ART_BarProfiles["none"] = ART_BarProfiles["none"] or {}
 
@@ -14,6 +15,7 @@ local getn    = table.getn
 local tinsert = table.insert
 local pairs   = pairs
 local GetTime = GetTime
+local strfind = string.find
 
 -- WoW 1.12: Slots 1–72 = 6 standard bars (12 each); 73–120 = stance/form/bonus bars;
 -- 121–144 = extra bars.  RingMenu and similar addons can map buttons to higher slots
@@ -285,6 +287,83 @@ local function ART_BP_IsInRaid()
 end
 
 -- ============================================================
+-- Equipment-set addon helpers (ItemRack / Outfitter)
+-- ============================================================
+-- Holds the deferred item-set section builder; called at PLAYER_LOGIN so all
+-- addon globals (Outfitter_WearOutfit, ItemRack_EquipSet, …) are guaranteed loaded.
+local ART_BP_BuildItemSection_fn = nil
+
+-- Returns sorted array of user set names from whichever addon(s) are installed.
+-- Called lazily (at button click or spec change) so SavedVariables are ready.
+local function ART_BP_GetEquipSets()
+	local sets = {}
+	local n = 0
+	-- ItemRack: Rack_User[user].Sets is a hash keyed by set name
+	if ItemRack_GetUserSets then
+		local rawSets = ItemRack_GetUserSets()
+		if rawSets then
+			for name in pairs(rawSets) do
+				if not strfind(name, "^ItemRack") and not strfind(name, "^Rack%-") then
+					n = n + 1; sets[n] = name
+				end
+			end
+		end
+	end
+	-- Outfitter: iterate categories, each holds an indexed array of outfit objects
+	if Outfitter_GetCategoryOrder and gOutfitter_Settings then
+		local cats = Outfitter_GetCategoryOrder()
+		if cats then
+			for ci = 1, getn(cats) do
+				local outfits = Outfitter_GetOutfitsByCategoryID(cats[ci])
+				if outfits then
+					for oi = 1, getn(outfits) do
+						local outfit = outfits[oi]
+						if outfit and outfit.Name and not outfit.Disabled then
+							n = n + 1; sets[n] = outfit.Name
+						end
+					end
+				end
+			end
+		end
+	end
+	sets.n = n
+	table.sort(sets)
+	return sets
+end
+
+-- Equip a named set via whichever addon owns it.
+local function ART_BP_EquipItemSet(name)
+	if not name or name == "none" then return end
+	-- ItemRack
+	if ItemRack_EquipSet and ItemRack_GetUserSets then
+		local rawSets = ItemRack_GetUserSets()
+		if rawSets and rawSets[name] then
+			ItemRack_EquipSet(name)
+			return
+		end
+	end
+	-- Outfitter: need to find the outfit object by name to pass to WearOutfit
+	if Outfitter_WearOutfit and Outfitter_GetCategoryOrder and gOutfitter_Settings then
+		local cats = Outfitter_GetCategoryOrder()
+		if cats then
+			for ci = 1, getn(cats) do
+				local catID  = cats[ci]
+				local outfits = Outfitter_GetOutfitsByCategoryID(catID)
+				if outfits then
+					for oi = 1, getn(outfits) do
+						local outfit = outfits[oi]
+						if outfit and outfit.Name == name then
+							Outfitter_WearOutfit(outfit, catID)
+							return
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+-- ============================================================
 -- Spec binding: state
 -- ============================================================
 local ART_BP_SpecBindingUI_Refresh_fn = nil
@@ -327,31 +406,37 @@ function ART_BP_OnSpecChanged(spec)
 	if spec == ART_BP_LastBoundSpec then return end
 	ART_BP_LastBoundSpec = spec
 
+	-- ── Bar profile ──────────────────────────────────────────
 	local binding = ART_BarSpecBindings[spec]
-	if not binding then return end
-
-	local targetProfile = nil
-	if binding.mode == "raid" then
-		if ART_BP_IsInRaid() then
+	if binding then
+		local targetProfile = nil
+		if binding.mode == "raid" then
+			if ART_BP_IsInRaid() then
+				if binding.profile and binding.profile ~= "none" then
+					targetProfile = binding.profile
+				end
+			else
+				if binding.outProfile and binding.outProfile ~= "none" then
+					targetProfile = binding.outProfile
+				end
+			end
+		else
 			if binding.profile and binding.profile ~= "none" then
 				targetProfile = binding.profile
 			end
-		else
-			if binding.outProfile and binding.outProfile ~= "none" then
-				targetProfile = binding.outProfile
-			end
 		end
-	else
-		if binding.profile and binding.profile ~= "none" then
-			targetProfile = binding.profile
+		if targetProfile and ART_ActiveBarProfileName ~= targetProfile then
+			ART_BP_ApplyProfile(targetProfile)
+			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Bar Profile: " .. spec .. " -> " .. targetProfile)
 		end
 	end
 
-	if not targetProfile then return end
-	if ART_ActiveBarProfileName == targetProfile then return end
-
-	ART_BP_ApplyProfile(targetProfile)
-	DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Bar Profile: " .. spec .. " -> Auto-Profile: " .. targetProfile)
+	-- ── Item set (Outfitter / ItemRack) ──────────────────────
+	local setName = ART_ItemSetBindings and ART_ItemSetBindings[spec]
+	if setName and setName ~= "none" then
+		ART_BP_EquipItemSet(setName)
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Item Set: " .. spec .. " -> " .. setName)
+	end
 end
 
 -- ============================================================
@@ -584,8 +669,9 @@ function AmptieRaidTools_InitBarProfiles(body)
 
 	local sbRowsY        = yPos
 	local specBindingRows = {}
+	local itemSetSection  = nil   -- forward ref; assigned after item-set section is built
 
-	-- Reposition all spec rows and update content height
+	-- Reposition all spec rows (and the item-set section below them) + update content height
 	local function LayoutSpecRows()
 		local yo = sbRowsY
 		for i = 1, getn(specBindingRows) do
@@ -602,6 +688,13 @@ function AmptieRaidTools_InitBarProfiles(body)
 				row.outRow:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yo)
 				yo = yo - 26
 			end
+		end
+		-- Reposition item-set section immediately below spec rows
+		if itemSetSection then
+			yo = yo - 16
+			itemSetSection:ClearAllPoints()
+			itemSetSection:SetPoint("TOPLEFT", content, "TOPLEFT", 0, yo)
+			yo = yo - itemSetSection:GetHeight()
 		end
 		content:SetHeight(math.abs(yo) + 20)
 	end
@@ -784,6 +877,269 @@ function AmptieRaidTools_InitBarProfiles(body)
 		RefreshBarSpecBindings()
 	end)
 
+	-- ── Item Set Bindings section (Outfitter / ItemRack) ─────
+	-- Detection is deferred to PLAYER_LOGIN (all addons are loaded by then).
+	-- The closure captures content, X, knownSpecs, itemSetSection, LayoutSpecRows.
+	ART_BP_BuildItemSection_fn = function()
+		ART_BP_BuildItemSection_fn = nil   -- one-shot
+
+		local hasItemRack  = (ItemRack_EquipSet    ~= nil)
+		local hasOutfitter = (Outfitter_WearOutfit ~= nil)
+		if not hasItemRack and not hasOutfitter then return end
+
+		-- Addon title for the header
+		local addonTitle
+		if hasItemRack and hasOutfitter then
+			addonTitle = "ItemRack / Outfitter"
+		elseif hasItemRack then
+			addonTitle = "ItemRack"
+		else
+			addonTitle = "Outfitter"
+		end
+
+		-- Section container (anchored dynamically by LayoutSpecRows)
+		local isFrame = CreateFrame("Frame", nil, content)
+		isFrame:SetWidth(600)
+
+		local isy = 0   -- internal Y cursor (negative = downward)
+
+		-- Separator line
+		local isSep = isFrame:CreateTexture(nil, "ARTWORK")
+		isSep:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, isy)
+		isSep:SetWidth(580); isSep:SetHeight(1)
+		isSep:SetTexture(0.3, 0.3, 0.35, 0.8)
+		isy = isy - 14
+
+		-- Section header (addon name)
+		local isHdr = isFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		isHdr:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, isy)
+		isHdr:SetText(addonTitle)
+		isHdr:SetTextColor(1, 0.82, 0, 1)
+		isy = isy - 26
+
+		-- Description
+		local isDesc = isFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		isDesc:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, isy)
+		isDesc:SetWidth(580); isDesc:SetJustifyH("LEFT")
+		isDesc:SetText("Bind your item sets to your specific specs. The set will be equipped automatically on spec change.")
+		isy = isy - 24
+
+		-- Column headers
+		local isC1 = isFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		isC1:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, isy)
+		isC1:SetText("Spec"); isC1:SetTextColor(0.7, 0.7, 0.7, 1)
+
+		local isC2 = isFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		isC2:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 160, isy)
+		isC2:SetText("Item Set"); isC2:SetTextColor(0.7, 0.7, 0.7, 1)
+		isy = isy - 24
+
+		-- Shared dropdown for all set-picker buttons (max 7 visible, mouse-wheel scroll)
+		local IS_DD_MAX  = 7
+		local IS_ROW_H   = 22
+
+		local isDD = CreateFrame("Frame", nil, UIParent)
+		isDD:SetFrameStrata("TOOLTIP")
+		isDD:SetWidth(180)
+		isDD:SetBackdrop({
+			bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+			tile = true, tileSize = 16, edgeSize = 12,
+			insets = { left = 3, right = 3, top = 3, bottom = 3 },
+		})
+		isDD:SetBackdropColor(0.08, 0.08, 0.10, 1)
+		isDD:SetBackdropBorderColor(0.4, 0.4, 0.5, 1)
+		isDD:Hide()
+
+		local isDDOwner   = nil   -- spec name whose dropdown is open
+		local isDDAnchor  = nil   -- the set-button that triggered the open
+		local isDDEntries = {}    -- full entry list (populated on open)
+		isDDEntries.n     = 0
+		local isDDOffset  = 0     -- first visible entry index (0-based)
+		local isDDItems   = {}    -- exactly IS_DD_MAX pre-created row buttons
+
+		-- Pre-create the fixed pool of row buttons
+		for i = 1, IS_DD_MAX do
+			local item = CreateFrame("Button", nil, isDD)
+			item:SetHeight(IS_ROW_H)
+			item:SetPoint("TOPLEFT", isDD, "TOPLEFT", 4,  -4 - (i - 1) * IS_ROW_H)
+			item:SetPoint("RIGHT",   isDD, "RIGHT",  -4, 0)
+			item:SetBackdrop({
+				bgFile  = "Interface\\ChatFrame\\ChatFrameBackground",
+				tile = true, tileSize = 16, edgeSize = 0,
+				insets = { left = 0, right = 0, top = 0, bottom = 0 },
+			})
+			item:SetBackdropColor(0, 0, 0, 0)
+			local fs = item:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			fs:SetPoint("LEFT", item, "LEFT", 8, 0)
+			item.fs = fs
+			item:SetScript("OnEnter", function()
+				this:SetBackdropColor(0.22, 0.22, 0.30, 1)
+				this.fs:SetTextColor(1, 0.82, 0, 1)
+			end)
+			item:SetScript("OnLeave", function()
+				this:SetBackdropColor(0, 0, 0, 0)
+				-- Restore: gold if this is the selected entry, white otherwise
+				local txt = this.fs:GetText()
+				if isDDOwner and (ART_ItemSetBindings[isDDOwner] or "none") == txt then
+					this.fs:SetTextColor(1, 0.82, 0, 1)
+				else
+					this.fs:SetTextColor(1, 1, 1, 1)
+				end
+			end)
+			item:Hide()
+			isDDItems[i] = item
+		end
+
+		local function IsDDHide()
+			isDD:Hide()
+			isDDOwner  = nil
+			isDDAnchor = nil
+		end
+
+		-- Render the visible window [offset+1 .. offset+IS_DD_MAX]
+		local function IsDDRender()
+			local n       = getn(isDDEntries)
+			local capSpec = isDDOwner   -- capture at render time for closures below
+			local capAnch = isDDAnchor
+			for i = 1, IS_DD_MAX do
+				local item = isDDItems[i]
+				local ei   = isDDOffset + i
+				if ei <= n then
+					local capEntry = isDDEntries[ei]
+					item.fs:SetText(capEntry)
+					if (ART_ItemSetBindings[capSpec] or "none") == capEntry then
+						item.fs:SetTextColor(1, 0.82, 0, 1)
+					else
+						item.fs:SetTextColor(1, 1, 1, 1)
+					end
+					item:SetScript("OnClick", function()
+						if capEntry == "none" then
+							ART_ItemSetBindings[capSpec] = nil
+						else
+							ART_ItemSetBindings[capSpec] = capEntry
+						end
+						capAnch.fs:SetText(capEntry)
+						IsDDHide()
+					end)
+					item:Show()
+				else
+					item:Hide()
+				end
+			end
+		end
+
+		-- Mouse wheel: scroll without a visible scrollbar
+		isDD:EnableMouseWheel(true)
+		isDD:SetScript("OnMouseWheel", function()
+			local n         = getn(isDDEntries)
+			local maxOffset = math.max(0, n - IS_DD_MAX)
+			-- arg1: +1 = scroll up (show earlier entries), -1 = scroll down
+			isDDOffset = math.max(0, math.min(maxOffset, isDDOffset - arg1))
+			IsDDRender()
+		end)
+
+		local function IsDDShow(anchorBtn, specName)
+			-- Toggle: clicking the same button again closes it
+			if isDDOwner == specName and isDD:IsShown() then
+				IsDDHide(); return
+			end
+			isDDOwner  = specName
+			isDDAnchor = anchorBtn
+			isDDOffset = 0
+
+			-- Rebuild entry list: "none" first, then all sets sorted
+			for k in pairs(isDDEntries) do isDDEntries[k] = nil end
+			isDDEntries.n = 0
+			tinsert(isDDEntries, "none")
+			local sets = ART_BP_GetEquipSets()
+			for i = 1, getn(sets) do tinsert(isDDEntries, sets[i]) end
+
+			-- Scroll to put the currently selected entry in view
+			local current = ART_ItemSetBindings[specName] or "none"
+			for i = 1, getn(isDDEntries) do
+				if isDDEntries[i] == current then
+					isDDOffset = math.max(0, i - 1)
+					if isDDOffset > math.max(0, getn(isDDEntries) - IS_DD_MAX) then
+						isDDOffset = math.max(0, getn(isDDEntries) - IS_DD_MAX)
+					end
+					break
+				end
+			end
+
+			IsDDRender()
+
+			local visible = math.min(IS_DD_MAX, getn(isDDEntries))
+			isDD:SetHeight(visible * IS_ROW_H + 8)
+			isDD:ClearAllPoints()
+			isDD:SetPoint("TOPLEFT", anchorBtn, "BOTTOMLEFT", 0, -2)
+			isDD:Show()
+		end
+
+		-- One row per spec
+		local isRows = {}
+		for si = 1, getn(knownSpecs) do
+			local specName = knownSpecs[si]
+
+			local specLbl = isFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			specLbl:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, isy - 4)
+			specLbl:SetWidth(150); specLbl:SetJustifyH("LEFT")
+			specLbl:SetText(specName)
+
+			local setBtn = CreateFrame("Button", nil, isFrame)
+			setBtn:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 160, isy)
+			setBtn:SetWidth(180); setBtn:SetHeight(22)
+			setBtn:SetBackdrop(ART_BP_BTN_BD)
+			setBtn:SetBackdropColor(0.12, 0.12, 0.15, 0.95)
+			setBtn:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+			setBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+			local sFS = setBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			sFS:SetPoint("LEFT", setBtn, "LEFT", 6, 0); sFS:SetJustifyH("LEFT")
+			setBtn.fs = sFS
+
+			local capSpec = specName
+			setBtn:SetScript("OnClick", function()
+				IsDDShow(this, capSpec)
+			end)
+
+			tinsert(isRows, { spec = specName, setBtn = setBtn })
+			isy = isy - 26
+		end
+
+		isFrame:SetHeight(math.abs(isy) + 10)
+		itemSetSection = isFrame
+
+		-- Refresh item-set row display (validates against current sets)
+		local function RefreshItemSetRows()
+			for i = 1, getn(isRows) do
+				local row = isRows[i]
+				local setName = ART_ItemSetBindings[row.spec] or "none"
+				row.setBtn.fs:SetText(setName)
+			end
+		end
+
+		-- Extend the panel's OnShow to also refresh item-set rows
+		local origOnShow = panel:GetScript("OnShow")
+		panel:SetScript("OnShow", function()
+			if origOnShow then origOnShow() end
+			RefreshItemSetRows()
+		end)
+
+		-- Reposition everything now that the section exists
+		LayoutSpecRows()
+		RefreshItemSetRows()
+	end   -- end ART_BP_BuildItemSection_fn
+
 	-- Initial display refresh
 	RefreshBarSpecBindings()
+	LayoutSpecRows()
 end
+
+-- Fire the deferred item-set section build at PLAYER_LOGIN.
+local ART_BP_LoginFrame = CreateFrame("Frame", "ART_BP_LoginFrame", UIParent)
+ART_BP_LoginFrame:RegisterEvent("PLAYER_LOGIN")
+ART_BP_LoginFrame:SetScript("OnEvent", function()
+	if ART_BP_BuildItemSection_fn then
+		ART_BP_BuildItemSection_fn()
+	end
+end)

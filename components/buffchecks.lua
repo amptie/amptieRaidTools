@@ -1365,8 +1365,8 @@ local ART_BC_ZONES = {
     { key="AQ40",   label="Temple of Ahn'Qiraj",   zone="Temple of Ahn'Qiraj"    },
     { key="NAXX",   label="Naxxramas",             zone="Naxxramas"              },
     { key="ESANC",  label="Emerald Sanctum",       zone="Emerald Sanctum"        },
-    { key="KARA10", label="Karazhan (10-man)",     zone="The Tower of Karazhan", maxRaid=14 },
-    { key="KARA40", label="Karazhan (40-man)",     zone="The Tower of Karazhan", minRaid=15 },
+    { key="KARA10", label="Karazhan (10-man)",     zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, maxRaid=24 },
+    { key="KARA40", label="Karazhan (40-man)",     zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, minRaid=25 },
 }
 
 local function ART_BC_GetCurrentZoneKey()
@@ -1375,7 +1375,13 @@ local function ART_BC_GetCurrentZoneKey()
     local n = GetNumRaidMembers() or 0
     for i = 1, getn(ART_BC_ZONES) do
         local z = ART_BC_ZONES[i]
-        if zone == z.zone then
+        local match = (zone == z.zone)
+        if not match and z.zones then
+            for j = 1, getn(z.zones) do
+                if z.zones[j] == zone then match = true; break end
+            end
+        end
+        if match then
             if (not z.minRaid or n >= z.minRaid) and (not z.maxRaid or n <= z.maxRaid) then
                 return z.key
             end
