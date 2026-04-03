@@ -1242,6 +1242,7 @@ local function BBBuildListPopup()
     local DISP  = 10
 
     local pop = CreateFrame("Frame", "ART_BB_ListPopup", UIParent)
+    if ART_RegisterPopup then ART_RegisterPopup(pop) end
     pop:SetWidth(POPUP_W)
     pop:SetHeight(POPUP_H)
     pop:SetPoint("CENTER", UIParent, "CENTER", 0, 60)

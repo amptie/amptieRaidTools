@@ -68,10 +68,33 @@ local SCROLLBAR_W     = 16
 -- ============================================================
 -- Frame öffnen/schließen
 -- ============================================================
+-- ============================================================
+-- Global popup/dropdown registry
+-- Components call ART_RegisterPopup(frame) to register any
+-- floating frame (dropdown, popup) that should auto-close when
+-- the main window is hidden.
+-- ============================================================
+local artPopupRegistry = {}
+function ART_RegisterPopup(frame)
+	if frame then
+		tinsert(artPopupRegistry, frame)
+	end
+end
+
+local function ART_CloseAllPopups()
+	for i = 1, getn(artPopupRegistry) do
+		local f = artPopupRegistry[i]
+		if f and f:IsShown() then f:Hide() end
+	end
+	-- Loot Rules vote popups have their own manager
+	if CloseVotePopup then CloseVotePopup() end
+end
+
 local function MainFrame_Show()
 	if mainFrame then mainFrame:Show() end
 end
 local function MainFrame_Hide()
+	ART_CloseAllPopups()
 	if mainFrame then mainFrame:Hide() end
 end
 local function MainFrame_Toggle()
@@ -438,6 +461,7 @@ local function CreateMinimapButton()
 	end)
 	-- ── Right-click dropdown ──────────────────────────────────
 	local mmDD = CreateFrame("Frame", "ART_MinimapDropdown", UIParent)
+	ART_RegisterPopup(mmDD)
 	mmDD:SetFrameStrata("TOOLTIP")
 	mmDD:SetWidth(160)
 	mmDD:SetBackdrop({

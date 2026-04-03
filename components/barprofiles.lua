@@ -571,6 +571,7 @@ function AmptieRaidTools_InitBarProfiles(body)
 		insets = { left = 3, right = 3, top = 3, bottom = 3 },
 	}
 	local ddList = CreateFrame("Frame", "ART_BP_DDList", panel)
+	if ART_RegisterPopup then ART_RegisterPopup(ddList) end
 	ddList:SetFrameStrata("TOOLTIP")
 	ddList:SetWidth(160)
 	ddList:SetBackdrop(DD_BACKDROP)
@@ -976,6 +977,7 @@ function AmptieRaidTools_InitBarProfiles(body)
 		local IS_ROW_H   = 22
 
 		local isDD = CreateFrame("Frame", nil, UIParent)
+		if ART_RegisterPopup then ART_RegisterPopup(isDD) end
 		isDD:SetFrameStrata("TOOLTIP")
 		isDD:SetWidth(120)
 		isDD:SetBackdrop({

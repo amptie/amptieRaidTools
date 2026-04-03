@@ -676,6 +676,7 @@ function AmptieRaidTools_InitHome(body)
 
 	local function BuildTierDropdown(parent, roleKey, anchorFrame)
 		local dd = CreateFrame("Frame", nil, UIParent)
+		if ART_RegisterPopup then ART_RegisterPopup(dd) end
 		dd:SetFrameStrata("TOOLTIP")
 		dd:SetWidth(100)
 		dd:SetHeight(getn(GEAR_TIERS) * 22 + 6)

@@ -374,6 +374,7 @@ function AmptieRaidTools_InitAutoBuffs(body)
 		insets = { left = 3, right = 3, top = 3, bottom = 3 },
 	}
 	local ddList = CreateFrame("Frame", "ART_AB_DDList", UIParent)
+	if ART_RegisterPopup then ART_RegisterPopup(ddList) end
 	ddList:SetFrameStrata("TOOLTIP")
 	ddList:SetWidth(150)
 	ddList:SetBackdrop(DD_BACKDROP)

@@ -358,6 +358,7 @@ local function MakeDropdown(parent, w, maxRows)
 
     local listH = maxRows * ROW_H + 8
     local list = CreateFrame("Frame", nil, UIParent)
+    if ART_RegisterPopup then ART_RegisterPopup(list) end
     list:SetFrameStrata("TOOLTIP")
     list:SetWidth(w)
     list:SetHeight(listH)
