@@ -969,17 +969,22 @@ local function BBUpdateWeaponBar()
     local db     = GetBBDB()
     local locked = db and db.weaponBarLocked
     local iconSz = (db and db.weaponIconSz) or BB_ICON_DEFAULT
-    local hasMH, mhExp, _, hasOH, ohExp = GetWeaponEnchantInfo()
+    local hasMH, mhExp, mhCharges, hasOH, ohExp, ohCharges = GetWeaponEnchantInfo()
     local visible = 0
 
     -- Fill active enchant slots from rightmost inward; store invSlot for tooltip.
-    local function fillActive(btn, invSlot, expMs)
+    local function fillActive(btn, invSlot, expMs, charges)
         btn.hasEnchant = true
         btn:SetID(invSlot)
         btn.icon:SetTexture(GetInventoryItemTexture("player", invSlot)
             or "Interface\\Icons\\INV_Misc_QuestionMark")
         btn.border:Hide()
-        btn.count:Hide()
+        if charges and charges > 0 then
+            btn.count:SetText(charges)
+            btn.count:Show()
+        else
+            btn.count:Hide()
+        end
         local sec = (expMs or 0) / 1000
         if sec > 0 then
             btn.timer:SetText(BBFmtTime(sec))
@@ -989,8 +994,8 @@ local function BBUpdateWeaponBar()
         end
     end
 
-    if hasMH then visible = visible + 1; fillActive(bbWeaponBtns[visible], 16, mhExp) end
-    if hasOH  then visible = visible + 1; fillActive(bbWeaponBtns[visible], 17, ohExp) end
+    if hasMH then visible = visible + 1; fillActive(bbWeaponBtns[visible], 16, mhExp, mhCharges) end
+    if hasOH  then visible = visible + 1; fillActive(bbWeaponBtns[visible], 17, ohExp, ohCharges) end
 
     -- Clear hasEnchant on preview slots
     for i = visible + 1, BB_MAX_WEAPONS do

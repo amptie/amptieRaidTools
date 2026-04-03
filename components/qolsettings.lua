@@ -18,7 +18,7 @@ local QOL_DEFAULTS = {
     QBG          = false,  -- Re-queue after leaving BG
     RBG          = false,  -- Auto release in BG
     AQUE         = false,  -- Leader queue announce
-    SBG          = false,  -- Block BG quest sharing
+    AQUEUE       = false,  -- Automate Queue (group or solo)
     WORLDDUNGEON = false,  -- Mute world chat in dungeons
     WORLDRAID    = false,  -- Mute world chat in raids
     WORLDBG      = false,  -- Mute world chat in battlegrounds
@@ -715,7 +715,8 @@ QuestFrameGreetingPanel_OnShow = QR_PostHook(QuestFrameGreetingPanel_OnShow, QR_
 -- ============================================================
 -- BG leave: poll every second while inside a BG.
 -- No reliance on specific event timing or localised "wins!" message text.
-local bgLeavePoll = 0
+local bgLeavePoll  = 0
+local artLeftBG    = false   -- set when LBG fires LeaveBattlefield; triggers re-queue on next PLAYER_ENTERING_WORLD
 local qolBgLeaveFrame = CreateFrame("Frame", nil, UIParent)
 qolBgLeaveFrame:SetScript("OnUpdate", function()
     local t = GetTime()
@@ -724,6 +725,7 @@ qolBgLeaveFrame:SetScript("OnUpdate", function()
     if not QDB("LBG") then return end
     if not QoL_IsInBG() then return end
     if GetBattlefieldWinner() ~= nil then
+        if QDB("QBG") or QDB("AQUEUE") then artLeftBG = true end
         LeaveBattlefield()
     end
 end)
@@ -766,6 +768,12 @@ qolEventFrame:SetScript("OnEvent", function()
         QoL_ZoneCheck()
         if evt == "PLAYER_LOGIN" then
             QoL_MailtoCheck()
+        end
+        -- Re-Queue: if we just left a BG via LBG and are now back in the world,
+        -- open the battlefield browser so BATTLEFIELDS_SHOW fires and auto-queues.
+        if artLeftBG and not QoL_IsInBG() then
+            artLeftBG = false
+            ToggleBattlefieldFrame()
         end
 
     elseif evt == "BANKFRAME_OPENED" then
@@ -866,8 +874,8 @@ qolEventFrame:SetScript("OnEvent", function()
         end
 
     elseif evt == "BATTLEFIELDS_SHOW" then
-        -- Re-queue: auto-join when the BF window opens (LazyPig QBG)
-        if QDB("QBG") then
+        -- Automate Queue / Re-Queue: join as group if leader, otherwise solo (LazyPig pattern)
+        if QDB("AQUEUE") or QDB("QBG") then
             if (GetNumPartyMembers() > 0 or GetNumRaidMembers() > 0) and IsPartyLeader() then
                 JoinBattlefield(0, 1)
             else
@@ -922,20 +930,6 @@ qolEventFrame:SetScript("OnEvent", function()
     end
 end)
 
--- ============================================================
--- StaticPopup hook: block BG quest share
--- In WoW 1.12 a shared quest opens a "QUEST_ACCEPT" popup (LazyPig pattern).
--- We skip the original call when blocking to prevent the dialog flashing.
--- ============================================================
-local _OrigStaticPopupOnShow = StaticPopup_OnShow
-StaticPopup_OnShow = function(dialog)
-    if QDB("SBG") and dialog and dialog.which == "QUEST_ACCEPT" and QoL_IsInBG() then
-        UIErrorsFrame:AddMessage("Quest Blocked (BG)")
-        dialog:Hide()
-        return
-    end
-    if _OrigStaticPopupOnShow then _OrigStaticPopupOnShow(dialog) end
-end
 
 -- ============================================================
 -- UI helper: tooltip for checkboxes
@@ -1072,15 +1066,15 @@ function AmptieRaidTools_InitQoLSettings(body)
     SetCbTooltip(cbAque, "Leader Queue Announce",
         "Announce to your group when you join\na battleground queue as raid/party leader.")
 
-    local cbSbg = ART_CreateCheckbox(panel, "Block BG Quest Sharing")
-    cbSbg:SetPoint("TOPLEFT", cbAque, "BOTTOMLEFT", 0, ROW_H)
-    cbSbg:SetChecked(db.SBG)
-    cbSbg.userOnClick = function() GetQolDB().SBG = cbSbg:GetChecked() end
-    SetCbTooltip(cbSbg, "Block BG Quest Sharing",
-        "Block incoming quest sharing popups\nwhile you are in a battleground.")
+    local cbAqueue = ART_CreateCheckbox(panel, "Automate Queue")
+    cbAqueue:SetPoint("TOPLEFT", cbAque, "BOTTOMLEFT", 0, ROW_H)
+    cbAqueue:SetChecked(db.AQUEUE)
+    cbAqueue.userOnClick = function() GetQolDB().AQUEUE = cbAqueue:GetChecked() end
+    SetCbTooltip(cbAqueue, "Automate Queue",
+        "When the battlefield window opens, automatically\njoin as a group (if you are group leader) or solo.\nAlso triggers on the loading screen after leaving a BG\nto re-queue immediately.")
 
     -- Section: World Chat Mute
-    local hdrWorld = MakeSectionHeader(panel, "World Chat Mute", cbSbg, -10)
+    local hdrWorld = MakeSectionHeader(panel, "World Chat Mute", cbAqueue, -10)
 
     local cbWdun = ART_CreateCheckbox(panel, "Mute in Dungeons")
     cbWdun:SetPoint("TOPLEFT", hdrWorld, "BOTTOMLEFT", 0, -4)

@@ -9,6 +9,7 @@ local function GetDB()
 	db.autorolls = db.autorolls or {}
 	local ar = db.autorolls
 	if ar.sand == nil then ar.sand = "none" end
+	if ar.scholo == nil then ar.scholo = "none" end
 	if ar.zg == nil then ar.zg = "none" end
 	if ar.aq == nil then ar.aq = "none" end
 	if ar.mc == nil then ar.mc = "none" end
@@ -20,6 +21,7 @@ end
 
 local ROLL_VALUES = { need = 1, greed = 2, pass = 0 }
 local BM_IDS = { [50203] = true }
+local SCHOLO_IDS = { [12843] = true }
 -- Kara: gleiche Zone "The Tower of Karazhan", Unterscheidung über Raidgröße (>= 15 = Kara40, wie CorruptedLootCouncil)
 local KARA_ARCANE_ESSENCE_ID = 61673
 local KARA40_ONLY_IDS = { [41485] = true, [61674] = true }
@@ -77,7 +79,9 @@ rollEventFrame:SetScript("OnEvent", function()
 			elseif ar.sand and ar.sand ~= "none" then
 				rollVal = ROLL_VALUES[ar.sand]
 			end
-		elseif ZG_IDS[itemId] and ar.zg and ar.zg ~= "none" then
+		elseif SCHOLO_IDS[itemId] and ar.scholo and ar.scholo ~= "none" then
+				rollVal = ROLL_VALUES[ar.scholo]
+			elseif ZG_IDS[itemId] and ar.zg and ar.zg ~= "none" then
 			rollVal = ROLL_VALUES[ar.zg]
 		elseif AQ_IDS[itemId] and ar.aq and ar.aq ~= "none" then
 			rollVal = ROLL_VALUES[ar.aq]
@@ -125,6 +129,8 @@ end)
 local AR_ROWS = {
 	{ key = "sand",   label = "Black Morass (Sand)",
 	  tooltip = "Hourglass Sand from Black Morass (item 50203).\n|cffaaaaааWhen Wardens of Time Exalted: only None / Pass available.|r" },
+	{ key = "scholo", label = "Scholo/Strat (Corruptor's Scourgestones)",
+	  tooltip = "Corruptor's Scourgestone from Scholomance / Stratholme (item 12843)." },
 	{ key = "zg",     label = "Zul'Gurub (Coins + Bijous)",
 	  tooltip = "Bijous and Coins from Zul'Gurub." },
 	{ key = "aq",     label = "Ahn'Qiraj (Scarabs + Idols)",

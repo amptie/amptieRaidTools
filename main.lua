@@ -323,6 +323,64 @@ end
 -- ============================================================
 -- Minimap-Button  (free-floating, drag anywhere on screen)
 -- ============================================================
+local function CreateGameMenuButton()
+	if not GameMenuFrame then return end
+	local btn = CreateFrame("Button", "GameMenuButtonAmptieRaidTools", GameMenuFrame, "GameMenuButtonTemplate")
+	btn:SetText("amptieRaidTools")
+
+	-- Style: match pfUI if installed
+	if pfUI and pfUI.api and pfUI.api.SkinButton then
+		pfUI.api.SkinButton(btn)
+		btn:SetText("|cFFFFD100a|rmptie|cFFFFD100R|raid|cFFFFD100T|rools")
+	end
+
+	btn:SetScript("OnClick", function()
+		MainFrame_Toggle()
+		HideUIPanel(GameMenuFrame)
+	end)
+
+	if GameMenuButtonPFUI then
+		-- pfUI + TurtleWoW: pfUI's turtle-wow.lua runs a one-shot OnUpdate (after
+		-- PLAYER_LOGIN) that sets GameMenuButtonShop at TOP -66 for its 2 buttons.
+		-- We hook GameMenuFrame OnShow so our repositioning always runs AFTER that,
+		-- guaranteeing the correct final state whenever the ESC menu opens.
+		GameMenuFrame:SetHeight(GameMenuFrame:GetHeight() + 22)
+
+		local origOnShow = GameMenuFrame:GetScript("OnShow")
+		GameMenuFrame:SetScript("OnShow", function()
+			if origOnShow then origOnShow() end
+
+			-- Rebuild top chain: aRT → pfUI Config → pfUI AddOns
+			btn:ClearAllPoints()
+			btn:SetPoint("TOP", GameMenuFrame, "TOP", 0, -10)
+
+			GameMenuButtonPFUI:ClearAllPoints()
+			GameMenuButtonPFUI:SetPoint("TOP", btn, "BOTTOM", 0, -1)
+
+			if GameMenuButtonPFUIAddOns then
+				GameMenuButtonPFUIAddOns:ClearAllPoints()
+				GameMenuButtonPFUIAddOns:SetPoint("TOP", GameMenuButtonPFUI, "BOTTOM", 0, -1)
+			end
+
+			-- Push Shop (Donation Rewards) below the 3-button block.
+			-- pfUI calculated it for 2 buttons; we now have 3, so move it down 22px.
+			-- GameMenuButtonOptions is anchored to Shop by pfUI (turtle-wow.lua),
+			-- so the entire lower block follows automatically.
+			if GameMenuButtonShop then
+				local lastBtn = GameMenuButtonPFUIAddOns or GameMenuButtonPFUI or btn
+				GameMenuButtonShop:ClearAllPoints()
+				GameMenuButtonShop:SetPoint("TOP", lastBtn, "BOTTOM", 0, -22)
+			end
+		end)
+	else
+		-- No pfUI: insert above Continue
+		local p, r, rp, x, y = GameMenuButtonContinue:GetPoint()
+		btn:SetPoint(p, r, rp, x, y)
+		GameMenuButtonContinue:SetPoint(p, btn, "BOTTOM", 0, -1)
+		GameMenuFrame:SetHeight(GameMenuFrame:GetHeight() + 22)
+	end
+end
+
 local function CreateMinimapButton()
 	if AmptieRaidToolsMinimapButton then
 		AmptieRaidToolsMinimapButton:Show()
@@ -611,5 +669,6 @@ eventFrame:SetScript("OnEvent", function()
 		DEFAULT_CHAT_FRAME:AddMessage("|cFF00FF00[amptieRaidTools]|r Loaded. /art or Minimap icon to open.")
 	elseif evt == "VARIABLES_LOADED" or evt == "PLAYER_LOGIN" then
 		CreateMinimapButton()
+		if evt == "PLAYER_LOGIN" then CreateGameMenuButton() end
 	end
 end)

@@ -125,6 +125,8 @@ local function ART_BP_CaptureProfile(name)
 		if data then
 			ART_BarProfiles[name][i] = data
 			count = count + 1
+		else
+			ART_BarProfiles[name][i] = { t = "empty" }
 		end
 	end
 	DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Bar profile '" .. name .. "' captured: " .. count .. " slots")
@@ -200,7 +202,14 @@ local function ART_BP_ApplyProfile(name)
 	for i = 1, ART_BP_MAX_SLOT do
 		local d = prof[i]
 		if d then
-			if d.t == "spell" then
+			if d.t == "empty" then
+				if HasAction(i) then
+					ClearCursor()
+					PickupAction(i)
+					ClearCursor()
+				end
+
+			elseif d.t == "spell" then
 				local key = d.r and (d.n .. "|" .. d.r) or d.n
 				local idx = spellMap[key] or spellMap[d.n]
 				if idx then
@@ -516,7 +525,7 @@ function AmptieRaidTools_InitBarProfiles(body)
 	descFs:SetPoint("TOPLEFT", content, "TOPLEFT", X, yPos)
 	descFs:SetWidth(580)
 	descFs:SetJustifyH("LEFT")
-	descFs:SetText("Capture and restore action bar layouts (slots 1–144: alle Standardleisten, Haltungs-/Form-Leisten und erweiterte IDs wie bei ActionBarProfiles). Supports spells, macros (incl. SuperCleveRoidMacros), and items. Link profiles to specs for automatic switching.")
+	descFs:SetText("Capture and restore action bar layouts. Supports spells, macros (incl. SuperCleveRoidMacros), and items. Link profiles to specs for automatic switching.")
 	yPos = yPos - 40
 
 	-- ── Profile name EditBox ─────────────────────────────────
