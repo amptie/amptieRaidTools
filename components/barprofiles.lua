@@ -367,13 +367,15 @@ end
 -- Spec binding: state
 -- ============================================================
 local ART_BP_SpecBindingUI_Refresh_fn = nil
-local ART_BP_LastBoundSpec = nil
+local ART_BP_LastBoundSpec      = nil
+local ART_BP_SkipItemSetEquip   = false  -- true on login/reload; cleared after first real spec check
 
 -- Reset after loading screen so the bound profile re-applies once on next spec check
 local ART_BP_EnterWorldFrame = CreateFrame("Frame", "ART_BP_EnterWorldFrame", UIParent)
 ART_BP_EnterWorldFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 ART_BP_EnterWorldFrame:SetScript("OnEvent", function()
-	ART_BP_LastBoundSpec = nil
+	ART_BP_LastBoundSpec    = nil
+	ART_BP_SkipItemSetEquip = true  -- suppress item set equip until an actual respec happens
 
 	-- Remove spec bindings that don't belong to the current class
 	if ART_BarSpecBindings then
@@ -404,7 +406,9 @@ function ART_BP_OnSpecChanged(spec)
 		return
 	end
 	if spec == ART_BP_LastBoundSpec then return end
-	ART_BP_LastBoundSpec = spec
+	local wasSkipping       = ART_BP_SkipItemSetEquip
+	ART_BP_LastBoundSpec    = spec
+	ART_BP_SkipItemSetEquip = false   -- clear after first real spec detected
 
 	-- ── Bar profile ──────────────────────────────────────────
 	local binding = ART_BarSpecBindings[spec]
@@ -432,10 +436,28 @@ function ART_BP_OnSpecChanged(spec)
 	end
 
 	-- ── Item set (Outfitter / ItemRack) ──────────────────────
-	local setName = ART_ItemSetBindings and ART_ItemSetBindings[spec]
-	if setName and setName ~= "none" then
-		ART_BP_EquipItemSet(setName)
-		DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Item Set: " .. spec .. " -> " .. setName)
+	if wasSkipping then return end   -- login/reload: skip equip, bar profile already applied
+	local isb = ART_ItemSetBindings and ART_ItemSetBindings[spec]
+	if isb then
+		local setToEquip = nil
+		if type(isb) == "string" then
+			if isb ~= "none" then setToEquip = isb end
+		else
+			local mode = isb.mode or "always"
+			if mode == "raid" then
+				if ART_BP_IsInRaid() then
+					if isb.set and isb.set ~= "none" then setToEquip = isb.set end
+				else
+					if isb.outSet and isb.outSet ~= "none" then setToEquip = isb.outSet end
+				end
+			else
+				if isb.set and isb.set ~= "none" then setToEquip = isb.set end
+			end
+		end
+		if setToEquip then
+			ART_BP_EquipItemSet(setToEquip)
+			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Item Set: " .. spec .. " -> " .. setToEquip)
+		end
 	end
 end
 
@@ -932,7 +954,13 @@ function AmptieRaidTools_InitBarProfiles(body)
 		local isC2 = isFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		isC2:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 160, isy)
 		isC2:SetText("Item Set"); isC2:SetTextColor(0.7, 0.7, 0.7, 1)
+
+		local isC3 = isFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		isC3:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 290, isy)
+		isC3:SetText("Condition"); isC3:SetTextColor(0.7, 0.7, 0.7, 1)
 		isy = isy - 24
+
+		local isRowsStartY = isy   -- save for LayoutItemSetRows
 
 		-- Shared dropdown for all set-picker buttons (max 7 visible, mouse-wheel scroll)
 		local IS_DD_MAX  = 7
@@ -940,7 +968,7 @@ function AmptieRaidTools_InitBarProfiles(body)
 
 		local isDD = CreateFrame("Frame", nil, UIParent)
 		isDD:SetFrameStrata("TOOLTIP")
-		isDD:SetWidth(180)
+		isDD:SetWidth(120)
 		isDD:SetBackdrop({
 			bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
 			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -951,12 +979,13 @@ function AmptieRaidTools_InitBarProfiles(body)
 		isDD:SetBackdropBorderColor(0.4, 0.4, 0.5, 1)
 		isDD:Hide()
 
-		local isDDOwner   = nil   -- spec name whose dropdown is open
-		local isDDAnchor  = nil   -- the set-button that triggered the open
-		local isDDEntries = {}    -- full entry list (populated on open)
+		local isDDOwner   = nil    -- spec name whose dropdown is open
+		local isDDAnchor  = nil    -- the set-button that triggered the open
+		local isDDField   = "set"  -- "set" or "outSet"
+		local isDDEntries = {}     -- full entry list (populated on open)
 		isDDEntries.n     = 0
-		local isDDOffset  = 0     -- first visible entry index (0-based)
-		local isDDItems   = {}    -- exactly IS_DD_MAX pre-created row buttons
+		local isDDOffset  = 0      -- first visible entry index (0-based)
+		local isDDItems   = {}     -- exactly IS_DD_MAX pre-created row buttons
 
 		-- Pre-create the fixed pool of row buttons
 		for i = 1, IS_DD_MAX do
@@ -979,9 +1008,10 @@ function AmptieRaidTools_InitBarProfiles(body)
 			end)
 			item:SetScript("OnLeave", function()
 				this:SetBackdropColor(0, 0, 0, 0)
-				-- Restore: gold if this is the selected entry, white otherwise
-				local txt = this.fs:GetText()
-				if isDDOwner and (ART_ItemSetBindings[isDDOwner] or "none") == txt then
+				local txt     = this.fs:GetText()
+				local binding = isDDOwner and ART_ItemSetBindings[isDDOwner]
+				local cur     = (binding and binding[isDDField]) or "none"
+				if cur == txt then
 					this.fs:SetTextColor(1, 0.82, 0, 1)
 				else
 					this.fs:SetTextColor(1, 1, 1, 1)
@@ -999,26 +1029,27 @@ function AmptieRaidTools_InitBarProfiles(body)
 
 		-- Render the visible window [offset+1 .. offset+IS_DD_MAX]
 		local function IsDDRender()
-			local n       = getn(isDDEntries)
-			local capSpec = isDDOwner   -- capture at render time for closures below
-			local capAnch = isDDAnchor
+			local n        = getn(isDDEntries)
+			local capSpec  = isDDOwner
+			local capAnch  = isDDAnchor
+			local capField = isDDField
 			for i = 1, IS_DD_MAX do
 				local item = isDDItems[i]
 				local ei   = isDDOffset + i
 				if ei <= n then
 					local capEntry = isDDEntries[ei]
 					item.fs:SetText(capEntry)
-					if (ART_ItemSetBindings[capSpec] or "none") == capEntry then
+					local binding = ART_ItemSetBindings[capSpec]
+					if ((binding and binding[capField]) or "none") == capEntry then
 						item.fs:SetTextColor(1, 0.82, 0, 1)
 					else
 						item.fs:SetTextColor(1, 1, 1, 1)
 					end
 					item:SetScript("OnClick", function()
-						if capEntry == "none" then
-							ART_ItemSetBindings[capSpec] = nil
-						else
-							ART_ItemSetBindings[capSpec] = capEntry
+						if not ART_ItemSetBindings[capSpec] then
+							ART_ItemSetBindings[capSpec] = { set = "none", mode = "always", outSet = "none" }
 						end
+						ART_ItemSetBindings[capSpec][capField] = capEntry
 						capAnch.fs:SetText(capEntry)
 						IsDDHide()
 					end)
@@ -1039,13 +1070,14 @@ function AmptieRaidTools_InitBarProfiles(body)
 			IsDDRender()
 		end)
 
-		local function IsDDShow(anchorBtn, specName)
-			-- Toggle: clicking the same button again closes it
-			if isDDOwner == specName and isDD:IsShown() then
+		local function IsDDShow(anchorBtn, specName, field)
+			-- Toggle: clicking the same button+field again closes it
+			if isDDOwner == specName and isDDField == (field or "set") and isDD:IsShown() then
 				IsDDHide(); return
 			end
 			isDDOwner  = specName
 			isDDAnchor = anchorBtn
+			isDDField  = field or "set"
 			isDDOffset = 0
 
 			-- Rebuild entry list: "none" first, then all sets sorted
@@ -1056,7 +1088,8 @@ function AmptieRaidTools_InitBarProfiles(body)
 			for i = 1, getn(sets) do tinsert(isDDEntries, sets[i]) end
 
 			-- Scroll to put the currently selected entry in view
-			local current = ART_ItemSetBindings[specName] or "none"
+			local binding = ART_ItemSetBindings[specName]
+			local current = (binding and binding[isDDField]) or "none"
 			for i = 1, getn(isDDEntries) do
 				if isDDEntries[i] == current then
 					isDDOffset = math.max(0, i - 1)
@@ -1076,19 +1109,22 @@ function AmptieRaidTools_InitBarProfiles(body)
 			isDD:Show()
 		end
 
+		-- Forward declaration so modeBtn closures can reference it before definition
+		local LayoutItemSetRows
+
 		-- One row per spec
 		local isRows = {}
 		for si = 1, getn(knownSpecs) do
 			local specName = knownSpecs[si]
 
 			local specLbl = isFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-			specLbl:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, isy - 4)
+			specLbl:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, isRowsStartY - 4)
 			specLbl:SetWidth(150); specLbl:SetJustifyH("LEFT")
 			specLbl:SetText(specName)
 
 			local setBtn = CreateFrame("Button", nil, isFrame)
-			setBtn:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 160, isy)
-			setBtn:SetWidth(180); setBtn:SetHeight(22)
+			setBtn:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 160, isRowsStartY)
+			setBtn:SetWidth(120); setBtn:SetHeight(22)
 			setBtn:SetBackdrop(ART_BP_BTN_BD)
 			setBtn:SetBackdropColor(0.12, 0.12, 0.15, 0.95)
 			setBtn:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
@@ -1097,25 +1133,126 @@ function AmptieRaidTools_InitBarProfiles(body)
 			sFS:SetPoint("LEFT", setBtn, "LEFT", 6, 0); sFS:SetJustifyH("LEFT")
 			setBtn.fs = sFS
 
+			local modeBtn = CreateFrame("Button", nil, isFrame)
+			modeBtn:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 290, isRowsStartY)
+			modeBtn:SetWidth(80); modeBtn:SetHeight(22)
+			modeBtn:SetBackdrop(ART_BP_BTN_BD)
+			modeBtn:SetBackdropColor(0.12, 0.12, 0.15, 0.95)
+			modeBtn:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+			modeBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+			local mFS = modeBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			mFS:SetPoint("CENTER", modeBtn, "CENTER", 0, 0); mFS:SetJustifyH("CENTER")
+			modeBtn.fs = mFS
+
+			-- Sub-row container (shown only when mode == "raid")
+			local outRow = CreateFrame("Frame", nil, isFrame)
+			outRow:SetWidth(500); outRow:SetHeight(22)
+			outRow:SetPoint("TOPLEFT", isFrame, "TOPLEFT", 0, isRowsStartY)
+			outRow:Hide()
+
+			local outSpecLbl = outRow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			outSpecLbl:SetPoint("TOPLEFT", outRow, "TOPLEFT", X + 20, -4)
+			outSpecLbl:SetWidth(130); outSpecLbl:SetJustifyH("LEFT")
+			outSpecLbl:SetText(specName); outSpecLbl:SetTextColor(0.6, 0.6, 0.6, 1)
+
+			local outSetBtn = CreateFrame("Button", nil, outRow)
+			outSetBtn:SetPoint("TOPLEFT", outRow, "TOPLEFT", X + 160, 0)
+			outSetBtn:SetWidth(120); outSetBtn:SetHeight(22)
+			outSetBtn:SetBackdrop(ART_BP_BTN_BD)
+			outSetBtn:SetBackdropColor(0.10, 0.10, 0.12, 0.95)
+			outSetBtn:SetBackdropBorderColor(0.28, 0.28, 0.35, 1)
+			outSetBtn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+			local osFS = outSetBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			osFS:SetPoint("LEFT", outSetBtn, "LEFT", 6, 0); osFS:SetJustifyH("LEFT")
+			outSetBtn.fs = osFS
+
+			local outCondLbl = outRow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+			outCondLbl:SetPoint("TOPLEFT", outRow, "TOPLEFT", X + 290, -4)
+			outCondLbl:SetWidth(80); outCondLbl:SetJustifyH("CENTER")
+			outCondLbl:SetText("out of Raid"); outCondLbl:SetTextColor(0.6, 0.6, 0.6, 1)
+
 			local capSpec = specName
 			setBtn:SetScript("OnClick", function()
-				IsDDShow(this, capSpec)
+				IsDDShow(this, capSpec, "set")
 			end)
 
-			tinsert(isRows, { spec = specName, setBtn = setBtn })
-			isy = isy - 26
+			modeBtn:SetScript("OnClick", function()
+				if not ART_ItemSetBindings[capSpec] then
+					ART_ItemSetBindings[capSpec] = { set = "none", mode = "always", outSet = "none" }
+				end
+				local b = ART_ItemSetBindings[capSpec]
+				if b.mode == "raid" then
+					b.mode = "always"; this.fs:SetText("Always"); outRow:Hide()
+				else
+					b.mode = "raid"; this.fs:SetText("Raid"); outRow:Show()
+				end
+				LayoutItemSetRows()
+			end)
+
+			outSetBtn:SetScript("OnClick", function()
+				IsDDShow(this, capSpec, "outSet")
+			end)
+
+			tinsert(isRows, {
+				spec      = specName,
+				specLbl   = specLbl,
+				setBtn    = setBtn,
+				modeBtn   = modeBtn,
+				outRow    = outRow,
+				outSetBtn = outSetBtn,
+			})
 		end
 
-		isFrame:SetHeight(math.abs(isy) + 10)
-		itemSetSection = isFrame
-
-		-- Refresh item-set row display (validates against current sets)
-		local function RefreshItemSetRows()
+		LayoutItemSetRows = function()
+			local yo = isRowsStartY
 			for i = 1, getn(isRows) do
 				local row = isRows[i]
-				local setName = ART_ItemSetBindings[row.spec] or "none"
-				row.setBtn.fs:SetText(setName)
+				row.specLbl:ClearAllPoints()
+				row.specLbl:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X, yo - 4)
+				row.setBtn:ClearAllPoints()
+				row.setBtn:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 160, yo)
+				row.modeBtn:ClearAllPoints()
+				row.modeBtn:SetPoint("TOPLEFT", isFrame, "TOPLEFT", X + 290, yo)
+				yo = yo - 26
+				if row.outRow:IsShown() then
+					row.outRow:ClearAllPoints()
+					row.outRow:SetPoint("TOPLEFT", isFrame, "TOPLEFT", 0, yo)
+					yo = yo - 26
+				end
 			end
+			isFrame:SetHeight(math.abs(yo) + 10)
+			LayoutSpecRows()
+		end
+
+		itemSetSection = isFrame
+
+		-- Refresh item-set row display
+		local function RefreshItemSetRows()
+			for i = 1, getn(isRows) do
+				local row     = isRows[i]
+				local b       = ART_ItemSetBindings[row.spec]
+				local mode    = "always"
+				local setName = "none"
+				local outName = "none"
+				if b then
+					if type(b) == "string" then
+						setName = b
+					else
+						mode    = b.mode   or "always"
+						setName = b.set    or "none"
+						outName = b.outSet or "none"
+					end
+				end
+				row.setBtn.fs:SetText(setName)
+				row.modeBtn.fs:SetText(mode == "raid" and "Raid" or "Always")
+				if mode == "raid" then
+					row.outRow:Show()
+					row.outSetBtn.fs:SetText(outName)
+				else
+					row.outRow:Hide()
+				end
+			end
+			LayoutItemSetRows()
 		end
 
 		-- Extend the panel's OnShow to also refresh item-set rows
@@ -1126,7 +1263,7 @@ function AmptieRaidTools_InitBarProfiles(body)
 		end)
 
 		-- Reposition everything now that the section exists
-		LayoutSpecRows()
+		LayoutItemSetRows()
 		RefreshItemSetRows()
 	end   -- end ART_BP_BuildItemSection_fn
 
@@ -1139,6 +1276,12 @@ end
 local ART_BP_LoginFrame = CreateFrame("Frame", "ART_BP_LoginFrame", UIParent)
 ART_BP_LoginFrame:RegisterEvent("PLAYER_LOGIN")
 ART_BP_LoginFrame:SetScript("OnEvent", function()
+	-- Migrate legacy string values to table form
+	for k, v in pairs(ART_ItemSetBindings) do
+		if type(v) == "string" then
+			ART_ItemSetBindings[k] = { set = v, mode = "always", outSet = "none" }
+		end
+	end
 	if ART_BP_BuildItemSection_fn then
 		ART_BP_BuildItemSection_fn()
 	end
