@@ -408,7 +408,7 @@ local function QoL_HandleGossip()
             gossipbreak = false
         elseif ((artGossipTypes[i] == "trainer" and processgossip)
                 or (artGossipTypes[i] == "vendor" and processgossip)
-                or (artGossipTypes[i] == "battlemaster" and (db.QBG or processgossip))
+                or (artGossipTypes[i] == "battlemaster" and (db.QBG or db.AQUEUE or processgossip))
                 or (artGossipTypes[i] == "gossip" and processgossip)
                 or (artGossipTypes[i] == "banker" and string.find(dsc or "", "^I would like to check my deposit box.") and processgossip)
                 or (artGossipTypes[i] == "petition" and (IsAltKeyDown() or IsShiftKeyDown() or string.find(dsc or "", "Teleport me to the Molten Core")) and processgossip))
@@ -715,8 +715,7 @@ QuestFrameGreetingPanel_OnShow = QR_PostHook(QuestFrameGreetingPanel_OnShow, QR_
 -- ============================================================
 -- BG leave: poll every second while inside a BG.
 -- No reliance on specific event timing or localised "wins!" message text.
-local bgLeavePoll  = 0
-local artLeftBG    = false   -- set when LBG fires LeaveBattlefield; triggers re-queue on next PLAYER_ENTERING_WORLD
+local bgLeavePoll = 0
 local qolBgLeaveFrame = CreateFrame("Frame", nil, UIParent)
 qolBgLeaveFrame:SetScript("OnUpdate", function()
     local t = GetTime()
@@ -725,7 +724,6 @@ qolBgLeaveFrame:SetScript("OnUpdate", function()
     if not QDB("LBG") then return end
     if not QoL_IsInBG() then return end
     if GetBattlefieldWinner() ~= nil then
-        if QDB("QBG") or QDB("AQUEUE") then artLeftBG = true end
         LeaveBattlefield()
     end
 end)
@@ -768,12 +766,6 @@ qolEventFrame:SetScript("OnEvent", function()
         QoL_ZoneCheck()
         if evt == "PLAYER_LOGIN" then
             QoL_MailtoCheck()
-        end
-        -- Re-Queue: if we just left a BG via LBG and are now back in the world,
-        -- open the battlefield browser so BATTLEFIELDS_SHOW fires and auto-queues.
-        if artLeftBG and not QoL_IsInBG() then
-            artLeftBG = false
-            ToggleBattlefieldFrame()
         end
 
     elseif evt == "BANKFRAME_OPENED" then
@@ -1071,7 +1063,7 @@ function AmptieRaidTools_InitQoLSettings(body)
     cbAqueue:SetChecked(db.AQUEUE)
     cbAqueue.userOnClick = function() GetQolDB().AQUEUE = cbAqueue:GetChecked() end
     SetCbTooltip(cbAqueue, "Automate Queue",
-        "When the battlefield window opens, automatically\njoin as a group (if you are group leader) or solo.\nAlso triggers on the loading screen after leaving a BG\nto re-queue immediately.")
+        "When the battlefield window opens, automatically\njoin as a group (if you are group leader) or solo.\nNote: Re-Queue requires talking to a Battlemaster NPC\nafter leaving — the game only allows queuing via NPC.")
 
     -- Section: World Chat Mute
     local hdrWorld = MakeSectionHeader(panel, "World Chat Mute", cbAqueue, -10)

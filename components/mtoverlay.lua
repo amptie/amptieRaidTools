@@ -326,6 +326,18 @@ function AmptieRaidTools_InitMTOverlay()
 	ovlFrame:SetFrameStrata("MEDIUM")
 	ovlFrame:SetClampedToScreen(true)
 	ovlFrame:SetMovable(true)
+	ovlFrame:EnableMouse(true)
+	ovlFrame:RegisterForDrag("LeftButton")
+	ovlFrame:SetScript("OnDragStart", function()
+		local oDb = GetOvlDB()
+		if oDb and not oDb.locked then this:StartMoving() end
+	end)
+	ovlFrame:SetScript("OnDragStop", function()
+		this:StopMovingOrSizing()
+		local pt, _, _, ox, oy = this:GetPoint()
+		local oDb = GetOvlDB()
+		if oDb then oDb.point = pt; oDb.x = ox; oDb.y = oy end
+	end)
 
 	ovlFrame:SetScript("OnUpdate", function()
 		local dt = arg1
@@ -417,6 +429,17 @@ function AmptieRaidTools_InitMTOverlay()
 				TargetUnit(this.unit)
 			end
 		end)
+		f:RegisterForDrag("LeftButton")
+		f:SetScript("OnDragStart", function()
+			local oDb = GetOvlDB()
+			if oDb and not oDb.locked then ovlFrame:StartMoving() end
+		end)
+		f:SetScript("OnDragStop", function()
+			ovlFrame:StopMovingOrSizing()
+			local pt, _, _, ox, oy = ovlFrame:GetPoint()
+			local oDb = GetOvlDB()
+			if oDb then oDb.point = pt; oDb.x = ox; oDb.y = oy end
+		end)
 
 		f:Hide()
 		mtFrames[i] = f
@@ -480,6 +503,17 @@ function AmptieRaidTools_InitMTOverlay()
 			if this.unit and arg1 == "LeftButton" and UnitExists(this.unit) then
 				TargetUnit(this.unit)
 			end
+		end)
+		f:RegisterForDrag("LeftButton")
+		f:SetScript("OnDragStart", function()
+			local oDb = GetOvlDB()
+			if oDb and not oDb.locked then ovlFrame:StartMoving() end
+		end)
+		f:SetScript("OnDragStop", function()
+			ovlFrame:StopMovingOrSizing()
+			local pt, _, _, ox, oy = ovlFrame:GetPoint()
+			local oDb = GetOvlDB()
+			if oDb then oDb.point = pt; oDb.x = ox; oDb.y = oy end
 		end)
 
 		f:Hide()
