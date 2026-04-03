@@ -89,17 +89,55 @@ local function CountReagentsInBags(wantedById, wantedByName, nameAliases)
 	return ownedById, ownedByName
 end
 
--- Graue Items (Quality 0) an Händler verkaufen
-local function SellGreyItems()
+-- Sell grey items (pfUI approach: detect grey via "ff9d9d9d" color code in item link)
+local greyProcessed = {}  -- tracks slots already attempted this merchant session
+local greyTimer     = 0
+local greySelling   = false
+
+local npcSellFrame = CreateFrame("Frame", "ART_NPC_SellFrame", UIParent)
+npcSellFrame:Hide()
+npcSellFrame:RegisterEvent("MERCHANT_CLOSED")
+npcSellFrame:SetScript("OnEvent", function()
+	local evt = event
+	if evt == "MERCHANT_CLOSED" then
+		greySelling = false
+		for k in pairs(greyProcessed) do greyProcessed[k] = nil end
+		greyTimer = 0
+		npcSellFrame:Hide()
+	end
+end)
+npcSellFrame:SetScript("OnUpdate", function()
+	if not greySelling then return end
+	local dt = arg1 or 0
+	greyTimer = greyTimer - dt
+	if greyTimer > 0 then return end
+	greyTimer = 0.1
+
+	-- Find the next unprocessed grey item
 	for bag = 0, 4 do
-		local numSlots = GetContainerNumSlots(bag)
-		for slot = 1, numSlots do
-			local texture, count, locked, quality = GetContainerItemInfo(bag, slot)
-			if quality == 0 and not locked then
-				UseContainerItem(bag, slot)
+		for slot = 1, GetContainerNumSlots(bag) do
+			local key = bag .. "x" .. slot
+			if not greyProcessed[key] then
+				local link = GetContainerItemLink(bag, slot)
+				if link and string.find(link, "ff9d9d9d") then
+					greyProcessed[key] = true
+					ClearCursor()
+					UseContainerItem(bag, slot)
+					return
+				end
 			end
 		end
 	end
+	-- Nothing left to sell
+	greySelling = false
+	npcSellFrame:Hide()
+end)
+
+local function SellGreyItems()
+	for k in pairs(greyProcessed) do greyProcessed[k] = nil end
+	greyTimer = 0
+	greySelling = true
+	npcSellFrame:Show()
 end
 
 -- Wanted-Listen aus DB bauen: wantedById[id]=minCount, wantedByName[name]=minCount (nur Time-Worn Rune)
