@@ -4,6 +4,17 @@
 -- Main Tanks: MT1-MT8 names, broadcast via addon message
 -- Vanilla 1.12 / Lua 5.0 / TurtleWoW
 
+-- Key Binding display strings
+BINDING_HEADER_AMPTIERAIDTOOLS = "Raid Assist (amptieRaidTools)"
+BINDING_NAME_ARTSETMT1 = "Set Target as Main Tank 1"
+BINDING_NAME_ARTSETMT2 = "Set Target as Main Tank 2"
+BINDING_NAME_ARTSETMT3 = "Set Target as Main Tank 3"
+BINDING_NAME_ARTSETMT4 = "Set Target as Main Tank 4"
+BINDING_NAME_ARTSETMT5 = "Set Target as Main Tank 5"
+BINDING_NAME_ARTSETMT6 = "Set Target as Main Tank 6"
+BINDING_NAME_ARTSETMT7 = "Set Target as Main Tank 7"
+BINDING_NAME_ARTSETMT8 = "Set Target as Main Tank 8"
+
 local getn    = table.getn
 local tinsert = table.insert
 local tremove = table.remove
@@ -118,7 +129,7 @@ local function ParseMTs(str)
 	return slots
 end
 
-local function BroadcastMTs()
+local function BroadcastMTs(silent)
 	local db = GetDB()
 	if not db then return end
 	local ch = nil
@@ -126,7 +137,9 @@ local function BroadcastMTs()
 	elseif GetNumPartyMembers() > 0 then ch = "PARTY"
 	end
 	if not ch then
-		DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Not in a group.")
+		if not silent then
+			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Not in a group.")
+		end
 		return
 	end
 	local msg = ""
@@ -135,35 +148,22 @@ local function BroadcastMTs()
 		msg = msg .. (db.mainTanks[i] or "")
 	end
 	SendAddonMessage(MT_PREFIX, "MT^" .. msg, ch)
-	DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r MT list broadcast.")
+	if not silent then
+		DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r MT list broadcast.")
+	end
 end
 
--- ── Auto-Broadcast Timer (10s, Raidlead only) ─────────────────
-local MT_AUTO_BROADCAST_INTERVAL = 30
-local mtAutoBroadcastTimer = 0
-local mtAutoBroadcastFrame = CreateFrame("Frame", nil, UIParent)
-mtAutoBroadcastFrame:SetScript("OnUpdate", function()
-	local dt = arg1
-	if not dt or dt < 0 then dt = 0 end
-	mtAutoBroadcastTimer = mtAutoBroadcastTimer + dt
-	if mtAutoBroadcastTimer < MT_AUTO_BROADCAST_INTERVAL then return end
-	mtAutoBroadcastTimer = 0
-	if GetNumRaidMembers() == 0 then return end
-	if not IsRaidLeader() then return end
-	local db = GetDB()
-	if not db then return end
-	local hasAny = false
-	for i = 1, NUM_MT_SLOTS do
-		if db.mainTanks[i] and db.mainTanks[i] ~= "" then hasAny = true; break end
+local function RequestMTs()
+	-- Ask lead/assist to send us the current MT list
+	if GetNumRaidMembers() > 0 then
+		SendAddonMessage(MT_PREFIX, "MT_REQUEST", "RAID")
 	end
-	if not hasAny then return end
-	local msg = ""
-	for i = 1, NUM_MT_SLOTS do
-		if i > 1 then msg = msg .. ";" end
-		msg = msg .. (db.mainTanks[i] or "")
-	end
-	SendAddonMessage(MT_PREFIX, "MT^" .. msg, "RAID")
-end)
+end
+
+-- ── Helpers ───────────────────────────────────────────────────
+local function CanBroadcastMTs()
+	return IsRaidLeader() or IsRaidOfficer()
+end
 
 -- ── Event Frame ───────────────────────────────────────────────
 local raEvt = CreateFrame("Frame", "ART_RA_EventFrame", UIParent)
@@ -177,25 +177,28 @@ raEvt:SetScript("OnEvent", function()
 	local evt    = event
 	local a1, a2 = arg1, arg2
 
-	if evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED"
-	or evt == "PLAYER_LOGIN" or evt == "PLAYER_ENTERING_WORLD" then
-		-- Clear MT targets when not in a raid
-		if GetNumRaidMembers() == 0 then
+	if evt == "PLAYER_LOGIN" or evt == "PLAYER_ENTERING_WORLD" then
+		-- When joining a raid, request current MT list from lead/assist
+		if GetNumRaidMembers() > 0 then
+			RequestMTs()
+		else
+			-- Not in a raid: clear MT list
 			local db = GetDB()
 			if db then
-				for i = 1, NUM_MT_SLOTS do
-					db.mainTanks[i] = ""
-				end
+				for i = 1, NUM_MT_SLOTS do db.mainTanks[i] = "" end
 				if RefreshMTUI then RefreshMTUI() end
 				if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
 			end
 		end
-		if evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
-			RunAutoAssists()
+
+	elseif evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
+		RunAutoAssists()
+		-- New member joined: if we are lead/assist, broadcast so they get the list
+		if CanBroadcastMTs() and GetNumRaidMembers() > 0 then
+			BroadcastMTs(true)
 		end
 
 	elseif evt == "CHAT_MSG_WHISPER" then
-		-- a1 = message text, a2 = sender name
 		if a1 and a2 then
 			local name = a2
 			local d = sfind(name, "-", 1, true)
@@ -205,16 +208,23 @@ raEvt:SetScript("OnEvent", function()
 
 	elseif evt == "CHAT_MSG_ADDON" then
 		if a1 == MT_PREFIX then
-			local _, _, payload = sfind(a2, "^MT%^(.*)$")
-			if payload ~= nil then
-				local db = GetDB()
-				if db then
-					local slots = ParseMTs(payload)
-					for i = 1, NUM_MT_SLOTS do
-						db.mainTanks[i] = slots[i] or ""
+			-- Someone requests the MT list → respond if we are lead/assist
+			if a2 == "MT_REQUEST" then
+				if CanBroadcastMTs() and GetNumRaidMembers() > 0 then
+					BroadcastMTs(true)
+				end
+			else
+				local _, _, payload = sfind(a2, "^MT%^(.*)$")
+				if payload ~= nil then
+					local db = GetDB()
+					if db then
+						local slots = ParseMTs(payload)
+						for i = 1, NUM_MT_SLOTS do
+							db.mainTanks[i] = slots[i] or ""
+						end
+						if RefreshMTUI then RefreshMTUI() end
+						if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
 					end
-					if RefreshMTUI then RefreshMTUI() end
-				if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
 				end
 			end
 		end
@@ -676,7 +686,7 @@ function AmptieRaidTools_InitRaidAssists(body)
 	local broadcastBtn = MakeBtn(panel, "Broadcast MTs to Raid", 160, 22)
 	broadcastBtn:SetPoint("LEFT", mtDesc, "RIGHT", 12, 0)
 	broadcastBtn:SetScript("OnClick", function()
-		if not IsRaidLeader() and not IsRaidOfficer() then
+		if not CanBroadcastMTs() then
 			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Cannot broadcast: requires Raid Leader or Assist.")
 			return
 		end
@@ -684,15 +694,6 @@ function AmptieRaidTools_InitRaidAssists(body)
 		if not db then return end
 		for i = 1, NUM_MT_SLOTS do
 			if mtEBs[i] then db.mainTanks[i] = mtEBs[i]:GetText() end
-		end
-		-- Block broadcast when all fields are empty
-		local allEmpty = true
-		for i = 1, NUM_MT_SLOTS do
-			if db.mainTanks[i] and db.mainTanks[i] ~= "" then allEmpty = false; break end
-		end
-		if allEmpty then
-			DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Cannot broadcast: all MT fields are empty.")
-			return
 		end
 		BroadcastMTs()
 		if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
@@ -745,6 +746,8 @@ function AmptieRaidTools_InitRaidAssists(body)
 		eb:SetScript("OnEditFocusLost", function()
 			this:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
 			SaveMT(myI, this:GetText())
+			if CanBroadcastMTs() then BroadcastMTs(true) end
+			if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
 		end)
 		mtEBs[i] = eb
 
@@ -754,6 +757,7 @@ function AmptieRaidTools_InitRaidAssists(body)
 		clearBtn:SetScript("OnClick", function()
 			eb:SetText("")
 			SaveMT(myI, "")
+			if CanBroadcastMTs() then BroadcastMTs(true) end
 			if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
 		end)
 	end
@@ -1029,4 +1033,22 @@ function AmptieRaidTools_InitRaidAssists(body)
 	end)
 
 	AmptieRaidTools_RegisterComponent("raidassists", panel)
+end
+
+-- Global function called by key bindings: sets current target as MT[index]
+function ART_SetMT(index)
+    if not UnitExists("target") then return end
+    if not UnitIsPlayer("target") then return end
+    if not CanBroadcastMTs() then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Cannot set MT: requires Raid Leader or Assist.")
+        return
+    end
+    local db = amptieRaidToolsDB
+    if not db or not db.raidAssists then return end
+    if not db.raidAssists.mainTanks then db.raidAssists.mainTanks = {} end
+    local name = UnitName("target")
+    db.raidAssists.mainTanks[index] = name or ""
+    if RefreshMTUI then RefreshMTUI() end
+    if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
+    BroadcastMTs(true)
 end

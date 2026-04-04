@@ -835,7 +835,7 @@ qolEventFrame:SetScript("OnEvent", function()
 
     elseif evt == "DUEL_REQUESTED" then
         if QDB("DUEL") then
-            DeclineDuel()
+            CancelDuel()
             StaticPopup_Hide("DUEL_REQUESTED")
         end
 

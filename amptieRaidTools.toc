@@ -5,6 +5,7 @@
 ## Version: 1.0
 ## SavedVariablesPerCharacter: amptieRaidToolsDB, ART_BuffsList, ART_Profiles, ART_ActiveProfileName, ART_SpecBindings, ART_BarProfiles, ART_ActiveBarProfileName, ART_BarSpecBindings, ART_ItemSetBindings, ART_SalvationOverride, ART_RaidCDs
 
+Bindings.xml
 main.lua
 components\playerinfo.lua
 components\home.lua

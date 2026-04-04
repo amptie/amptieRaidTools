@@ -1,0 +1,10 @@
+<Bindings>
+  <Binding name="ARTSETMT1" header="AMPTIERAIDTOOLS">ART_SetMT(1)</Binding>
+  <Binding name="ARTSETMT2">ART_SetMT(2)</Binding>
+  <Binding name="ARTSETMT3">ART_SetMT(3)</Binding>
+  <Binding name="ARTSETMT4">ART_SetMT(4)</Binding>
+  <Binding name="ARTSETMT5">ART_SetMT(5)</Binding>
+  <Binding name="ARTSETMT6">ART_SetMT(6)</Binding>
+  <Binding name="ARTSETMT7">ART_SetMT(7)</Binding>
+  <Binding name="ARTSETMT8">ART_SetMT(8)</Binding>
+</Bindings>
