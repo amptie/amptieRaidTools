@@ -1358,22 +1358,24 @@ local BC_MAX_AND = 4
 -- Zone bindings (zone key → BC profile name)
 -- ============================================================
 local ART_BC_ZONES = {
-    { key="MC",     label="Molten Core",          zone="Molten Core"            },
-    { key="BWL",    label="Blackwing Lair",        zone="Blackwing Lair"         },
-    { key="ONY",    label="Onyxia's Lair",         zone="Onyxia's Lair"          },
-    { key="ZG",     label="Zul'Gurub",             zone="Zul'Gurub"              },
-    { key="AQ20",   label="Ruins of Ahn'Qiraj",    zone="Ruins of Ahn'Qiraj"     },
-    { key="AQ40",   label="Temple of Ahn'Qiraj",   zone="Temple of Ahn'Qiraj"    },
-    { key="NAXX",   label="Naxxramas",             zone="Naxxramas"              },
-    { key="ESANC",  label="Emerald Sanctum",       zone="Emerald Sanctum"        },
-    { key="KARA10", label="Karazhan (10-man)",     zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, maxRaid=24 },
-    { key="KARA40", label="Karazhan (40-man)",     zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, minRaid=25 },
+    { key="MC",     label="Molten Core",          zone="Molten Core"                                                                              },
+    { key="BWL",    label="Blackwing Lair",        zone="Blackwing Lair"                                                                          },
+    { key="ONY",    label="Onyxia's Lair",         zone="Onyxia's Lair"                                                                           },
+    { key="ZG",     label="Zul'Gurub",             zone="Zul'Gurub"                                                                               },
+    { key="TMH",    label="Timbermaw Hold",        zone="Timbermaw Hold"                                                                          },
+    { key="AQ20",   label="Ruins of Ahn'Qiraj",    zone="Ruins of Ahn'Qiraj"                                                                      },
+    { key="AQ40",   label="Temple of Ahn'Qiraj",   zone="Temple of Ahn'Qiraj"                                                                     },
+    { key="NAXX",   label="Naxxramas",             zone="Naxxramas",             zones={"The Upper Necropolis"}                                    },
+    { key="ESANC",  label="Emerald Sanctum",       zone="Emerald Sanctum"                                                                         },
+    { key="KARA10", label="Karazhan (10-man)",     zone="The Tower of Karazhan", zones={"Tower of Karazhan", "The Rock of Desolation"}, maxRaid=14 },
+    { key="KARA40", label="Karazhan (40-man)",     zone="The Tower of Karazhan", zones={"Tower of Karazhan", "The Rock of Desolation"}, minRaid=15 },
 }
 
 local function ART_BC_GetCurrentZoneKey()
+    local n = GetNumRaidMembers() or 0
+    if n == 0 then return nil end
     local zone = GetRealZoneText()
     if not zone then return nil end
-    local n = GetNumRaidMembers() or 0
     for i = 1, getn(ART_BC_ZONES) do
         local z = ART_BC_ZONES[i]
         local match = (zone == z.zone)
@@ -2341,12 +2343,16 @@ function AmptieRaidTools_InitBuffChecks(body)
         local bindings = db2.bcZoneBindings
         if not bindings then return end
         local zkey = ART_BC_GetCurrentZoneKey()
-        if not zkey then return end
+        if not zkey then return end  -- not in a tracked raid zone → keep manual selection
         local profName = bindings[zkey]
-        if not profName or profName == "none" then return end
-        if not db2.buffCheckProfiles or not db2.buffCheckProfiles[profName] then return end
-        if db2.activeBCProfile == profName then return end
-        db2.activeBCProfile = profName
+        local target
+        if profName and profName ~= "none" and db2.buffCheckProfiles and db2.buffCheckProfiles[profName] then
+            target = profName
+        else
+            target = "Default"
+        end
+        if db2.activeBCProfile == target then return end
+        db2.activeBCProfile = target
         RefreshProfileList()
         if _ART_BC_RefreshRules then _ART_BC_RefreshRules() end
         OnProfileChanged()

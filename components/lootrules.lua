@@ -55,22 +55,25 @@ local QUALITY_COLORS = {
 -- minRaid/maxRaid = raid size guards (for distinguishing 10- vs 40-man variants)
 -- ============================================================
 local ART_LR_ZONES = {
-    { key="mc",      label="Molten Core",         zone="Molten Core"            },
-    { key="ony",     label="Onyxia's Lair",        zone="Onyxia's Lair"          },
-    { key="bwl",     label="Blackwing Lair",       zone="Blackwing Lair"         },
-    { key="zg",      label="Zul'Gurub",            zone="Zul'Gurub"              },
-    { key="aq20",    label="Ruins of AQ",          zone="Ruins of Ahn'Qiraj"     },
-    { key="aq40",    label="Temple of AQ",         zone="Temple of Ahn'Qiraj"    },
-    { key="naxx",    label="Naxxramas",            zone="Naxxramas"              },
-    { key="kara10",  label="Karazhan (10-man)",    zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, maxRaid=24 },
-    { key="kara40",  label="Karazhan (40-man)",    zone="The Tower of Karazhan", zones={"The Rock of Desolation"}, minRaid=25 },
-    { key="outraid", label="Out of Raid",          zone=nil                      },
+    { key="mc",      label="Molten Core",         zone="Molten Core"                                                                             },
+    { key="ony",     label="Onyxia's Lair",        zone="Onyxia's Lair"                                                                          },
+    { key="bwl",     label="Blackwing Lair",       zone="Blackwing Lair"                                                                         },
+    { key="zg",      label="Zul'Gurub",            zone="Zul'Gurub"                                                                              },
+    { key="tmh",     label="Timbermaw Hold",       zone="Timbermaw Hold"                                                                         },
+    { key="aq20",    label="Ruins of AQ",          zone="Ruins of Ahn'Qiraj"                                                                     },
+    { key="aq40",    label="Temple of AQ",         zone="Temple of Ahn'Qiraj"                                                                    },
+    { key="naxx",    label="Naxxramas",            zone="Naxxramas",            zones={"The Upper Necropolis"}                                    },
+    { key="esanc",   label="Emerald Sanctum",      zone="Emerald Sanctum"                                                                        },
+    { key="kara10",  label="Karazhan (10-man)",    zone="The Tower of Karazhan", zones={"Tower of Karazhan", "The Rock of Desolation"}, maxRaid=14 },
+    { key="kara40",  label="Karazhan (40-man)",    zone="The Tower of Karazhan", zones={"Tower of Karazhan", "The Rock of Desolation"}, minRaid=15 },
+    { key="outraid", label="Out of Raid",          zone=nil                                                                                       },
 }
 
 local function GetCurrentLRZoneKey()
+    local n = GetNumRaidMembers() or 0
+    if n == 0 then return "outraid" end
     local zone = GetRealZoneText()
     if not zone then return "outraid" end
-    local n = GetNumRaidMembers() or 0
     for i = 1, getn(ART_LR_ZONES) do
         local z = ART_LR_ZONES[i]
         if z.zone then
@@ -2193,8 +2196,14 @@ local function ApplyLRZoneBinding()
     local zk = GetCurrentLRZoneKey()   -- never nil (falls back to "outraid")
     local db = GetLRDB()
     local bp = db.lrZoneBindings[zk]
-    if bp and db.lootProfiles[bp] and db.activeLRProfile ~= bp then
-        db.activeLRProfile = bp
+    local target
+    if bp and db.lootProfiles[bp] then
+        target = bp
+    else
+        target = "Default"
+    end
+    if db.activeLRProfile ~= target then
+        db.activeLRProfile = target
         if lrPanelRef and lrPanelRef.refreshProfList then
             lrPanelRef.refreshProfList()
         end
