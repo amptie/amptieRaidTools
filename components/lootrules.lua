@@ -8,6 +8,23 @@ local mmod      = math.mod
 local strfind   = string.find
 local sfmt      = string.format
 
+-- Strip realm suffix from player name ("Foo-Realm" → "Foo")
+local function StripRealm(name)
+    if not name then return name end
+    local dash = strfind(name, "-", 1, true)
+    return dash and string.sub(name, 1, dash - 1) or name
+end
+
+-- Returns the raid subgroup (1-8) for a given player name, or nil if not found
+local function GetPlayerSubgroup(name)
+    local n = GetNumRaidMembers()
+    for i = 1, n do
+        local rname, _, subgroup = GetRaidRosterInfo(i)
+        if rname == name then return subgroup end
+    end
+    return nil
+end
+
 -- ============================================================
 -- DB helpers
 -- ============================================================
@@ -937,6 +954,49 @@ CloseVotePopup = function(sid)
 end
 
 -- ============================================================
+-- COUNCIL FRAME helpers
+-- ============================================================
+
+local function DoNormalAward(pname)
+    local cs = GetCouncilSession()
+    if not cs then return end
+    local vd      = cs.votes and cs.votes[pname]
+    local btnName = (vd and vd.btnName) or ""
+    local roll    = (vd and vd.roll)    or 0
+    local aMsg = "LC_AWARD^"..cs.sid.."^"..pname.."^"..(cs.itemLink or "")
+                 .."^"..btnName.."^"..tostring(roll)
+    if not cs.isSim then
+        local cidx = nil
+        for ci = 1, 40 do
+            local cn = GetMasterLootCandidate(ci)
+            if not cn then break end
+            if StripRealm(cn) == StripRealm(pname) then cidx = ci; break end
+        end
+        if not cidx then
+            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[ART-LC]|r "..pname.." not a loot candidate.")
+            return
+        end
+        GiveMasterLoot(cs.slot, cidx)
+    end
+    SendLC(aMsg)
+    cs.awardCount = (cs.awardCount or 0) + 1
+    if not cs.awardedTo then cs.awardedTo = {} end
+    tinsert(cs.awardedTo, pname)
+    if cs.slots then
+        local newSlots = {}; newSlots.n = 0
+        for si = 2, getn(cs.slots) do tinsert(newSlots, cs.slots[si]) end
+        cs.slots   = newSlots
+        cs.slot    = cs.slots[1] or cs.slot
+    end
+    local remaining = (cs.quantity or 1) - cs.awardCount
+    if remaining <= 0 then cs.awarded = cs.awardedTo[1] end
+    cs.pendingTmogWinner = nil
+    CloseVotePopup(cs.sid)
+    UpdateCouncilNav()
+    RefreshCouncilRows()
+end
+
+-- ============================================================
 -- COUNCIL FRAME
 -- ============================================================
 local councilFrame = nil
@@ -1164,60 +1224,134 @@ local function CreateCouncilFrame()
         row.cvoteBtn = cvb
         ab.rowPlayer = ""
         ab:SetScript("OnClick",function()
-            if not GetCouncilSession() or this.rowPlayer == "" then return end
+            local cs = GetCouncilSession()
+            if not cs or this.rowPlayer == "" then return end
             local pname = this.rowPlayer
-            StaticPopupDialogs["ART_LC_AWARD"] = {
-                text = "Award item to "..pname.."?",
-                button1="Award", button2="Cancel",
+            -- Check if any DV votes exist in this session
+            local hasDV = false
+            if cs.dVotes then
+                for _ in pairs(cs.dVotes) do hasDV = true; break end
+            end
+            if hasDV then
+                -- If transmog mode is already active, cancel it first
+                if cs.pendingTmogWinner then
+                    cs.pendingTmogWinner = nil
+                    RefreshCouncilRows()
+                    return
+                end
+                -- Lower council frame below StaticPopup while dialog is shown
+                if councilFrame then councilFrame:SetFrameStrata("DIALOG") end
+                -- Ask: transmog award or normal?
+                StaticPopupDialogs["ART_LC_TMOG_ASK"] = {
+                    text = "Award "..pname.." — is this a Transmog award?",
+                    button1 = "Yes (pick recipient)",
+                    button2 = "No (award normally)",
+                    OnAccept = function()
+                        if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                        local cs2 = GetCouncilSession()
+                        if not cs2 then return end
+                        cs2.pendingTmogWinner = pname
+                        RefreshCouncilRows()
+                    end,
+                    OnCancel = function()
+                        if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                        DoNormalAward(pname)
+                    end,
+                    OnHide = function()
+                        if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                    end,
+                    timeout = 0, whileDead = true, hideOnEscape = false,
+                }
+                StaticPopup_Show("ART_LC_TMOG_ASK")
+            else
+                -- No DV votes — normal confirm popup
+                if councilFrame then councilFrame:SetFrameStrata("DIALOG") end
+                StaticPopupDialogs["ART_LC_AWARD"] = {
+                    text = "Award item to "..pname.."?",
+                    button1 = "Award", button2 = "Cancel",
+                    OnAccept = function()
+                        if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                        DoNormalAward(pname)
+                    end,
+                    OnCancel = function()
+                        if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                    end,
+                    OnHide = function()
+                        if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                    end,
+                    timeout = 0, whileDead = true, hideOnEscape = true,
+                }
+                StaticPopup_Show("ART_LC_AWARD")
+            end
+        end)
+        row.awardBtn = ab
+
+        -- Transmog recipient button: shown on DV rows after "Yes" to transmog question
+        local tb = MakeBtn(row, "Tmog", 52, 18)
+        tb:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        tb.dvPlayer = nil
+        tb:SetScript("OnClick", function()
+            local cs = GetCouncilSession()
+            if not cs or not cs.pendingTmogWinner or not this.dvPlayer then return end
+            local dvPerson  = this.dvPlayer
+            local winPerson = cs.pendingTmogWinner
+            if councilFrame then councilFrame:SetFrameStrata("DIALOG") end
+            StaticPopupDialogs["ART_LC_TMOG"] = {
+                text = "Give transmog to "..dvPerson.."?\n"..winPerson.." wins — "..dvPerson.." must trade to "..winPerson,
+                button1 = "Confirm", button2 = "Cancel",
                 OnAccept = function()
-                    local cs = GetCouncilSession()
-                    if not cs then return end
-                    -- Include winner's vote name and roll in the message so all clients can display it
-                    local vd       = cs.votes and cs.votes[pname]
-                    local btnName  = (vd and vd.btnName) or ""
-                    local roll     = (vd and vd.roll)    or 0
-                    local aMsg = "LC_AWARD^"..cs.sid.."^"..pname.."^"..(cs.itemLink or "")
-                                  .."^"..btnName.."^"..tostring(roll)
-                    if cs.isSim then
-                        SendLC(aMsg)
-                    else
+                    if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                    local cs2 = GetCouncilSession()
+                    if not cs2 then return end
+                    if not cs2.isSim then
                         local cidx = nil
                         for ci = 1, 40 do
                             local cn = GetMasterLootCandidate(ci)
                             if not cn then break end
-                            if cn == pname then cidx = ci; break end
+                            if StripRealm(cn) == StripRealm(dvPerson) then cidx = ci; break end
                         end
                         if not cidx then
-                            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[ART-LC]|r "..pname.." not a loot candidate.")
+                            DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[ART-LC]|r "..dvPerson.." not a loot candidate.")
                             return
                         end
-                        GiveMasterLoot(cs.slot, cidx)
-                        SendLC(aMsg)
+                        GiveMasterLoot(cs2.slot, cidx)
                     end
-                    -- Track award
-                    cs.awardCount = (cs.awardCount or 0) + 1
-                    tinsert(cs.awardedTo, pname)
-                    -- Remove the used slot from the front of the slots list
-                    if cs.slots then
+                    local wvd      = cs2.votes and cs2.votes[winPerson]
+                    local btnName2 = (wvd and wvd.btnName) or ""
+                    local roll2    = (wvd and wvd.roll)    or 0
+                    local dvSub    = GetPlayerSubgroup(winPerson) or 0
+                    local aMsg = "LC_AWARD_TMOG^"..cs2.sid.."^"..winPerson.."^"..dvPerson.."^"..(cs2.itemLink or "")
+                                 .."^"..btnName2.."^"..tostring(roll2).."^"..tostring(dvSub)
+                    SendLC(aMsg)
+                    cs2.awardCount = (cs2.awardCount or 0) + 1
+                    if not cs2.awardedTo then cs2.awardedTo = {} end
+                    tinsert(cs2.awardedTo, winPerson)
+                    if cs2.slots then
                         local newSlots = {}; newSlots.n = 0
-                        for si = 2, getn(cs.slots) do tinsert(newSlots, cs.slots[si]) end
-                        cs.slots = newSlots
-                        cs.slot  = cs.slots[1] or cs.slot
+                        for si = 2, getn(cs2.slots) do tinsert(newSlots, cs2.slots[si]) end
+                        cs2.slots = newSlots
+                        cs2.slot  = cs2.slots[1] or cs2.slot
                     end
-                    local remaining = (cs.quantity or 1) - cs.awardCount
-                    if remaining <= 0 then
-                        -- All copies awarded — mark session fully awarded
-                        cs.awarded = cs.awardedTo[1]
-                    end
-                    CloseVotePopup(cs.sid)
+                    local remaining = (cs2.quantity or 1) - cs2.awardCount
+                    if remaining <= 0 then cs2.awarded = winPerson end
+                    cs2.pendingTmogWinner = nil
+                    CloseVotePopup(cs2.sid)
                     UpdateCouncilNav()
                     RefreshCouncilRows()
                 end,
-                timeout=0, whileDead=true, hideOnEscape=true,
+                OnCancel = function()
+                    if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                end,
+                OnHide = function()
+                    if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                end,
+                timeout = 0, whileDead = true, hideOnEscape = true,
             }
-            StaticPopup_Show("ART_LC_AWARD")
+            StaticPopup_Show("ART_LC_TMOG")
         end)
-        row.awardBtn = ab
+        tb:Hide()
+        row.tmogBtn = tb
+
         row:Hide()
         rows[ri] = row
     end
@@ -1397,6 +1531,14 @@ RefreshCouncilRows = function()
             row.commentFS:SetText(e.comment)
             row.awardBtn.rowPlayer = e.isDVRow and "" or e.player
             if not e.isDVRow and (cs.isML or IsRaidLeader()) and not cs.awarded then row.awardBtn:Show() else row.awardBtn:Hide() end
+            if row.tmogBtn then
+                if e.isDVRow and (cs.isML or IsRaidLeader()) and not cs.awarded and cs.pendingTmogWinner then
+                    row.tmogBtn.dvPlayer = e.player
+                    row.tmogBtn:Show()
+                else
+                    row.tmogBtn:Hide()
+                end
+            end
 
             -- Officer vote button
             local target = e.player
@@ -1753,6 +1895,7 @@ end
 -- Message handler
 -- ============================================================
 OnLCMessage = function(sender, msg)
+    sender = StripRealm(sender)
     local parts = {}; local pc = 0
     for piece in string.gfind(msg.."^","([^^]*)%^") do
         pc = pc+1; parts[pc] = piece
@@ -1950,6 +2093,63 @@ OnLCMessage = function(sender, msg)
             if remaining <= 0 then
                 s.awarded = winnerName
             end
+            CloseVotePopup(s.sid)
+        end
+        if councilFrame and councilFrame:IsShown() then
+            UpdateCouncilNav(); RefreshCouncilRows()
+        end
+
+    elseif tag == "LC_AWARD_TMOG" then
+        local s          = allSessions[parts[2]]
+        local winnerName = parts[3]
+        local tmogName   = parts[4]
+        local aLink      = parts[5] or ""
+        local voteName   = parts[6] or ""
+        local roll       = tonumber(parts[7]) or 0
+        local dvSub      = tonumber(parts[8]) or 0
+        -- Line 1: winner announcement with vote type and roll
+        local line1
+        if voteName ~= "" then
+            line1 = "|cffffff00[aRT]|r "..winnerName.." wins "..aLink.." for "..voteName
+            if roll > 0 then line1 = line1.." (Roll: "..tostring(roll)..")" end
+        else
+            line1 = "|cffffff00[aRT]|r "..winnerName.." wins "..aLink
+        end
+        -- Line 2: transmog recipient
+        local line2 = "|cffffff00[aRT]|r "..tmogName.." receives the transmog"
+        -- Line 3: trade instruction with subgroup
+        local subStr = dvSub > 0 and " (Group "..tostring(dvSub)..")" or ""
+        local line3 = "|cffffff00[aRT]|r "..tmogName.." "..aLink.." please trade to "..winnerName..subStr
+        local myName = UnitName("player")
+        if myName == sender or (not sender) then
+            local ch
+            if GetNumRaidMembers()  > 0 then ch = "RAID"
+            elseif GetNumPartyMembers() > 0 then ch = "PARTY" end
+            if ch then
+                SendChatMessage(line1, ch)
+                SendChatMessage(line2, ch)
+                SendChatMessage(line3, ch)
+            else
+                DEFAULT_CHAT_FRAME:AddMessage(line1)
+                DEFAULT_CHAT_FRAME:AddMessage(line2)
+                DEFAULT_CHAT_FRAME:AddMessage(line3)
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage(line1)
+            DEFAULT_CHAT_FRAME:AddMessage(line2)
+            DEFAULT_CHAT_FRAME:AddMessage(line3)
+        end
+        if s then
+            s.awardCount = (s.awardCount or 0) + 1
+            if not s.awardedTo then s.awardedTo = {} end
+            tinsert(s.awardedTo, winnerName)
+            if s.slots and getn(s.slots) > 0 then
+                local newSlots = {}; newSlots.n = 0
+                for si = 2, getn(s.slots) do tinsert(newSlots, s.slots[si]) end
+                s.slots = newSlots
+            end
+            local remaining = (s.quantity or 1) - s.awardCount
+            if remaining <= 0 then s.awarded = winnerName end
             CloseVotePopup(s.sid)
         end
         if councilFrame and councilFrame:IsShown() then

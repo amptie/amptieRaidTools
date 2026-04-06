@@ -926,10 +926,33 @@ local function BCDecodeRule(data)
     return { who={ type=whoType, value=whoValue }, conditions=conditions }
 end
 
+-- ── Slot-based jitter for responses ───────────────────────────
+-- When all 40 players receive BCK_E simultaneously they would all respond at
+-- once. Instead each player calculates an offset based on their raid slot so
+-- responses are spread evenly across BC_RESPONSE_WINDOW seconds.
+local BC_RESPONSE_WINDOW = 3.0  -- seconds across which 40 responses are spread
+
+local function BC_GetSendOffset()
+    local n = GetNumRaidMembers()
+    if n == 0 then return 0 end
+    local myName = UnitName("player")
+    for i = 1, n do
+        if UnitName("raid"..i) == myName then
+            return (i - 1) / n * BC_RESPONSE_WINDOW
+        end
+    end
+    return 0
+end
+
+local bcResponseDirty       = false
+local bcResponseScheduledAt = 0
+
+local function BCScheduleResponse()
+    bcResponseDirty       = true
+    bcResponseScheduledAt = GetTime() + BC_GetSendOffset()
+end
+
 -- ── 5-second poll replaces reactive debounce ──────────────────
--- Dirty flags are set on aura/roster events; the single poll timer acts on
--- them at most once per 5 s, collapsing burst events (flask drinks, zone-ins,
--- sub-group reassignments) into one network send instead of many.
 local bcAurasDirty     = false
 local bcRosterDirty    = false
 local BC_POLL_INTERVAL = 5.0
@@ -939,22 +962,28 @@ local bcDebounceFrame = CreateFrame("Frame", nil, UIParent)
 bcDebounceFrame:SetScript("OnUpdate", function()
     local dt = arg1
     bcPollTimer = bcPollTimer + dt
-    if bcPollTimer < BC_POLL_INTERVAL then return end
-    bcPollTimer = 0
-    if bcAurasDirty then
-        bcAurasDirty = false
-        -- Re-evaluate own buffs with stored rules and re-send result
+    -- Jittered response: send when this player's scheduled slot arrives
+    if bcResponseDirty and GetTime() >= bcResponseScheduledAt then
+        bcResponseDirty = false
         if bcRcvCheckId and getn(bcRcvRules) > 0 then
             BCEvaluateSelfAndRespond(bcRcvCheckId, bcRcvRules)
         end
     end
+    if bcPollTimer < BC_POLL_INTERVAL then return end
+    bcPollTimer = 0
+    if bcAurasDirty then
+        bcAurasDirty = false
+        -- Re-evaluate own buffs — schedule with jitter so poll ticks don't align
+        BCScheduleResponse()
+    end
     if bcRosterDirty then
         bcRosterDirty = false
-        -- Re-broadcast check definition so new members receive the rules
-        local db2 = amptieRaidToolsDB
-        if db2 and db2.bcOverlayShown and db2.activeBCProfile then
-            ART_BC_StartCheck(db2.activeBCProfile)
-        end
+        -- Re-evaluate own buffs only — do NOT re-broadcast to the whole raid.
+        -- A full re-broadcast (ART_BC_StartCheck) causes all 40 players to respond
+        -- simultaneously, creating a packet burst. Only new joiners need the rules;
+        -- they will receive them on their own PLAYER_ENTERING_WORLD via the
+        -- bcAurasDirty path once the check leader next presses Check.
+        BCScheduleResponse()
     end
 end)
 
@@ -995,16 +1024,16 @@ bcEvt:SetScript("OnEvent", function()
         if rule then
             tinsert(bcRcvRules, rule)
         end
-        -- If we have all expected rules, evaluate self
+        -- If we have all expected rules, schedule jittered response
         if bcRcvExpected > 0 and getn(bcRcvRules) >= bcRcvExpected then
-            BCEvaluateSelfAndRespond(bcRcvCheckId, bcRcvRules)
+            BCScheduleResponse()
         end
 
     elseif msgType == "BCK_E" then
         -- BCK_E^checkId  — end of rule transmission
         if fields[2] ~= bcRcvCheckId then return end
         if getn(bcRcvRules) > 0 then
-            BCEvaluateSelfAndRespond(bcRcvCheckId, bcRcvRules)
+            BCScheduleResponse()
         end
 
     elseif msgType == "BCK_OK" then

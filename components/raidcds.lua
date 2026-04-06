@@ -448,6 +448,33 @@ local function CheckOwnCooldowns()
 	end
 end
 
+-- Dirty flags — set by events, consumed by cdPollFrame (always running)
+local cdStatusDirty = false  -- PLAYER_AURAS_CHANGED: re-check own status effects
+local cdRosterDirty = false  -- RAID_ROSTER_UPDATE: rebuild roster + refresh display
+
+local cdPollTimer = 0
+local CD_POLL_INTERVAL = 0.5
+local cdPollFrame = CreateFrame("Frame", "ART_CD_PollFrame", UIParent)
+cdPollFrame:SetScript("OnUpdate", function()
+	local dt = arg1
+	if not dt or dt <= 0 then return end
+	cdPollTimer = cdPollTimer + dt
+	if cdPollTimer < CD_POLL_INTERVAL then return end
+	cdPollTimer = 0
+	if cdStatusDirty then
+		cdStatusDirty = false
+		CheckOwnStatusEffects()
+	end
+	if cdRosterDirty then
+		cdRosterDirty = false
+		RebuildRoster()
+		PruneTaunterConfig()
+		UpdateOverlayVisibility()
+		if RefreshDisplay       then RefreshDisplay()       end
+		if RefreshTaunterListUI then RefreshTaunterListUI() end
+	end
+end)
+
 -- ── Event frame ───────────────────────────────────────────────
 local cdEvt = CreateFrame("Frame", "ART_CD_EventFrame", UIParent)
 cdEvt:RegisterEvent("PLAYER_LOGIN")
@@ -490,18 +517,14 @@ cdEvt:SetScript("OnEvent", function()
 		UpdateOverlayVisibility()
 
 	elseif evt == "PLAYER_AURAS_CHANGED" then
-		CheckOwnStatusEffects()
+		cdStatusDirty = true
 
 	elseif evt == "SPELL_UPDATE_COOLDOWN" then
 		CheckOwnCooldowns()
 		CheckOwnTaunt()
 
 	elseif evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
-		RebuildRoster()
-		PruneTaunterConfig()
-		UpdateOverlayVisibility()
-		if RefreshDisplay       then RefreshDisplay()       end
-		if RefreshTaunterListUI then RefreshTaunterListUI() end
+		cdRosterDirty = true
 
 	elseif evt == "PLAYER_ENTERING_WORLD" then
 		RebuildRoster()
@@ -653,7 +676,7 @@ local function CreateOverlay()
 		end
 	end)
 
-	-- 1-second refresh while visible
+	-- 1-second refresh while visible (dirty flags handled by cdPollFrame)
 	local refreshTimer = 0
 	f:SetScript("OnUpdate", function()
 		local dt = arg1

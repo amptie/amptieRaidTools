@@ -1066,16 +1066,14 @@ local function BBCheckUpdater()
 end
 
 -- ============================================================
--- ── Event frame (player-only UNIT_AURA is acceptable)
+-- ── Event frame
 -- ============================================================
 local bbEventFrame = CreateFrame("Frame", "ART_BB_EventFrame", UIParent)
-bbEventFrame:RegisterEvent("UNIT_AURA")
+bbEventFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
 bbEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 bbEventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 bbEventFrame:SetScript("OnEvent", function()
     local evt = event
-    local a1  = arg1
-    if evt == "UNIT_AURA" and a1 ~= "player" then return end
     if bbBuffFrame   and bbBuffFrame:IsShown()   then BBUpdateBuffBar()   end
     if bbDebuffFrame and bbDebuffFrame:IsShown() then BBUpdateDebuffBar() end
     if bbConFrame    and bbConFrame:IsShown()    then BBUpdateConsolidated() end

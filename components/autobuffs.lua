@@ -158,21 +158,25 @@ local function ART_AB_ScanAndRemoveAll()
 	end
 end
 
--- Throttle against event spam
-local ART_AB_LastScan = 0
-local ART_AB_ScanInterval = 0.2
+-- Dirty flag + 0.5s poll instead of per-event scan
+local ART_AB_ScanDirty = false
+local ART_AB_PollTimer = 0
+local ART_AB_POLL_INTERVAL = 0.5
 
--- PLAYER_AURAS_CHANGED: check on every player buff change
 local auraFrame = CreateFrame("Frame", "ART_AB_AuraFrame", UIParent)
 auraFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
 auraFrame:SetScript("OnEvent", function()
-	local evt = event
-	if evt == "PLAYER_AURAS_CHANGED" then
-		local now = GetTime()
-		if (now - ART_AB_LastScan) > ART_AB_ScanInterval then
-			ART_AB_LastScan = now
-			ART_AB_ScanOnce()
-		end
+	ART_AB_ScanDirty = true
+end)
+auraFrame:SetScript("OnUpdate", function()
+	local dt = arg1
+	if not dt or dt <= 0 then return end
+	ART_AB_PollTimer = ART_AB_PollTimer + dt
+	if ART_AB_PollTimer < ART_AB_POLL_INTERVAL then return end
+	ART_AB_PollTimer = 0
+	if ART_AB_ScanDirty then
+		ART_AB_ScanDirty = false
+		ART_AB_ScanOnce()
 	end
 end)
 

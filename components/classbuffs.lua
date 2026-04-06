@@ -78,7 +78,8 @@ local CB_GROUPS = {
     { key="SHPRO",  casterClass="PRIEST",  label="Shadow Protection",
       filter="everyone",  names={"Shadow Protection","Prayer of Shadow Protection"} },
     { key="SPIRIT", casterClass="PRIEST",  label="Divine Spirit",
-      filter="mana_only", names={"Divine Spirit","Prayer of Spirit"} },
+      filter="mana_only", excludeClasses={HUNTER=true},
+      names={"Divine Spirit","Prayer of Spirit"} },
     { key="MOTW",   casterClass="DRUID",   label="Mark of the Wild",
       filter="everyone",  names={"Mark of the Wild","Gift of the Wild"} },
     { key="BSALV",  casterClass="PALADIN", label="Bless. of Salvation",
@@ -86,7 +87,8 @@ local CB_GROUPS = {
     { key="BWIS",   casterClass="PALADIN", label="Bless. of Wisdom",
       filter="mana_only", names={"Blessing of Wisdom","Greater Blessing of Wisdom"} },
     { key="BMIGHT", casterClass="PALADIN", label="Bless. of Might",
-      filter="everyone",  names={"Blessing of Might","Greater Blessing of Might"} },
+      filter="everyone",  excludeClasses={WARLOCK=true, PRIEST=true, MAGE=true},
+      names={"Blessing of Might","Greater Blessing of Might"} },
     { key="BKINGS", casterClass="PALADIN", label="Bless. of Kings",
       filter="everyone",  names={"Blessing of Kings","Greater Blessing of Kings"} },
     { key="BLIGHT", casterClass="PALADIN", label="Bless. of Light",
@@ -140,6 +142,7 @@ local cbLastScan       = 0
 local CB_SCAN_THROTTLE = 2.0
 
 local cbBroadcastDirty  = false
+local cbScanDirty       = false   -- set by PLAYER_AURAS_CHANGED; consumed by poll timer
 local CB_POLL_INTERVAL  = 3.0
 local cbPollTimer       = 0
 local cbScheduledSendAt = 0
@@ -165,7 +168,8 @@ local cbOvlToggleCB = nil
 -- ============================================================
 -- Filter helpers
 -- ============================================================
-local function CBMatchesFilter(classUpper, filter)
+local function CBMatchesFilter(classUpper, filter, excludeClasses)
+    if excludeClasses and excludeClasses[classUpper] then return false end
     if filter == "everyone"  then return true end
     if filter == "mana_only" then return not CB_NO_MANA[classUpper] end
     return true
@@ -286,74 +290,99 @@ end
 -- ============================================================
 -- Core scan
 -- ============================================================
+-- Incremental scan state — scan CB_SCAN_PER_FRAME units per OnUpdate tick
+-- ============================================================
+local CB_SCAN_PER_FRAME = 5   -- units processed per frame; tune up/down as needed
+local cbScanUnits       = {}  -- unit list for the current scan pass
+local cbScanUnitN       = 0
+local cbScanPos         = 0   -- next index to process
+local cbScanVisGroups   = {}  -- snapshot of visible groups for this pass
+local cbScanInProgress  = false
+
+local function CBScanUnit(unit, visGroups)
+    local pname = UnitName(unit)
+    if not pname or not UnitIsConnected(unit) or UnitIsDeadOrGhost(unit) then return end
+    local classLocale, pclassRaw = UnitClass(unit)
+    local pclass = pclassRaw and string.upper(pclassRaw) or ""
+
+    for k in pairs(cbNameSet) do cbNameSet[k] = nil end
+    if CB_HAS_SUPERWOW then
+        for i = 1, 64 do
+            local tex, _, spellId = UnitBuff(unit, i)
+            if not tex then break end
+            if spellId and spellId > 0 then
+                local sname = SpellInfo(spellId)
+                if sname then cbNameSet[sname] = true end
+            end
+        end
+    else
+        if not cbScanTipText then
+            cbScanTipText = getglobal("ART_CB_ScanTipTextLeft1")
+        end
+        for i = 1, 32 do
+            cbScanTip:SetOwner(UIParent, "ANCHOR_NONE")
+            cbScanTip:SetUnitBuff(unit, i)
+            local name = cbScanTipText and cbScanTipText:GetText()
+            if not name or name == "" then break end
+            cbNameSet[name] = true
+        end
+    end
+
+    for gi = 1, getn(visGroups) do
+        local g = visGroups[gi]
+        if CBMatchesFilter(pclass, g.filter, g.excludeClasses) and not CBPlayerExcluded(pname, g) then
+            local has = false
+            for ni = 1, getn(g.names) do
+                if cbNameSet[g.names[ni]] then has = true; break end
+            end
+            if has then
+                tinsert(cbResults[g.key].have, pname)
+            else
+                tinsert(cbResults[g.key].missing, pname)
+            end
+        end
+    end
+end
+
+-- Kick off a new incremental scan pass
 local function CBScanAll()
+    -- Reset results
     for i = 1, getn(CB_GROUPS) do
         local g = CB_GROUPS[i]
         cbResults[g.key] = { have={}, missing={} }
     end
 
     local visGroups = CBGetVisibleGroups()
-    if getn(visGroups) == 0 then return end
+    if getn(visGroups) == 0 then
+        cbScanInProgress = false
+        return
+    end
 
+    -- Build unit list snapshot
+    for k = 1, cbScanUnitN do cbScanUnits[k] = nil end
+    cbScanUnitN = 0
     local numRaid  = GetNumRaidMembers()
     local numParty = GetNumPartyMembers()
-    local units = {}
     if numRaid > 0 then
-        for i = 1, numRaid do tinsert(units, "raid" .. i) end
+        for i = 1, numRaid do
+            cbScanUnitN = cbScanUnitN + 1
+            cbScanUnits[cbScanUnitN] = "raid" .. i
+        end
     else
-        tinsert(units, "player")
-        for i = 1, numParty do tinsert(units, "party" .. i) end
-    end
-
-    for ui = 1, getn(units) do
-        local unit  = units[ui]
-        local pname = UnitName(unit)
-        if pname and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
-            local classLocale, pclassRaw = UnitClass(unit)
-            local pclass = pclassRaw and string.upper(pclassRaw) or ""
-
-            -- Collect all buff names for this unit (one pass, reuse cbNameSet)
-            for k in pairs(cbNameSet) do cbNameSet[k] = nil end
-            if CB_HAS_SUPERWOW then
-                -- SuperWoW: UnitBuff returns spellId as 3rd value → SpellInfo → name
-                for i = 1, 64 do
-                    local tex, _, spellId = UnitBuff(unit, i)
-                    if not tex then break end
-                    if spellId and spellId > 0 then
-                        local sname = SpellInfo(spellId)
-                        if sname then cbNameSet[sname] = true end
-                    end
-                end
-            else
-                -- Fallback: hidden tooltip reads buff name from TextLeft1
-                if not cbScanTipText then
-                    cbScanTipText = getglobal("ART_CB_ScanTipTextLeft1")
-                end
-                for i = 1, 32 do
-                    cbScanTip:SetOwner(UIParent, "ANCHOR_NONE")
-                    cbScanTip:SetUnitBuff(unit, i)
-                    local name = cbScanTipText and cbScanTipText:GetText()
-                    if not name or name == "" then break end
-                    cbNameSet[name] = true
-                end
-            end
-
-            for gi = 1, getn(visGroups) do
-                local g = visGroups[gi]
-                if CBMatchesFilter(pclass, g.filter) and not CBPlayerExcluded(pname, g) then
-                    local has = false
-                    for ni = 1, getn(g.names) do
-                        if cbNameSet[g.names[ni]] then has = true; break end
-                    end
-                    if has then
-                        tinsert(cbResults[g.key].have, pname)
-                    else
-                        tinsert(cbResults[g.key].missing, pname)
-                    end
-                end
-            end
+        cbScanUnitN = cbScanUnitN + 1
+        cbScanUnits[cbScanUnitN] = "player"
+        for i = 1, numParty do
+            cbScanUnitN = cbScanUnitN + 1
+            cbScanUnits[cbScanUnitN] = "party" .. i
         end
     end
+
+    -- Snapshot visible groups
+    for k = 1, getn(cbScanVisGroups) do cbScanVisGroups[k] = nil end
+    for i = 1, getn(visGroups) do cbScanVisGroups[i] = visGroups[i] end
+
+    cbScanPos        = 1
+    cbScanInProgress = true
 end
 
 -- ============================================================
@@ -640,8 +669,7 @@ local function CBTriggerScan()
     local now = GetTime()
     if (now - cbLastScan) < CB_SCAN_THROTTLE then return end
     cbLastScan = now
-    CBScanAll()
-    if cbOverlayFrame then RefreshCBOverlay() end
+    CBScanAll()  -- starts incremental pass; overlay refreshed when pass completes
 end
 
 -- ============================================================
@@ -847,17 +875,38 @@ cbPollFrame:SetScript("OnUpdate", function()
     local dt = arg1
     if not dt or dt < 0 then dt = 0 end
     cbPollTimer = cbPollTimer + dt
-    -- Broadcast: slot-based jitter — only send when this player's timeslot arrives
+
+    -- Broadcast: slot-based jitter
     if cbBroadcastDirty and GetTime() >= cbScheduledSendAt then
         cbBroadcastDirty = false
         CBBroadcastAutoRemove()
     end
-    -- Scan: still every 3s regardless of broadcast
-    if cbPollTimer < CB_POLL_INTERVAL then return end
-    cbPollTimer = 0
-    cbLastScan = 0
-    CBScanAll()
-    if cbOverlayFrame then RefreshCBOverlay() end
+
+    -- Start a new scan pass when dirty or on the 3s tick
+    if cbPollTimer >= CB_POLL_INTERVAL then
+        cbPollTimer = 0
+        cbScanDirty = true
+    end
+    if cbScanDirty and not cbScanInProgress then
+        cbScanDirty = false
+        cbLastScan  = GetTime()
+        CBScanAll()  -- initialises the incremental pass, processes 0 units yet
+    end
+
+    -- Incremental scan: process CB_SCAN_PER_FRAME units per OnUpdate tick
+    if cbScanInProgress then
+        local endPos = cbScanPos + CB_SCAN_PER_FRAME - 1
+        if endPos > cbScanUnitN then endPos = cbScanUnitN end
+        for i = cbScanPos, endPos do
+            CBScanUnit(cbScanUnits[i], cbScanVisGroups)
+        end
+        cbScanPos = endPos + 1
+        if cbScanPos > cbScanUnitN then
+            -- Pass complete — update overlay
+            cbScanInProgress = false
+            if cbOverlayFrame then RefreshCBOverlay() end
+        end
+    end
 end)
 
 cbEventFrame:SetScript("OnEvent", function()
@@ -895,6 +944,7 @@ cbEventFrame:SetScript("OnEvent", function()
         CBPruneRoster()
         cbBroadcastDirty  = true
         cbScheduledSendAt = GetTime() + CB_GetSendOffset()
+        -- Do NOT reset cbLastScan here — honour the throttle even on roster changes
         CBTriggerScan()
         -- Update overlay visibility (may have entered/left a group)
         if cbOverlayFrame then
@@ -903,7 +953,9 @@ cbEventFrame:SetScript("OnEvent", function()
         end
 
     elseif evt == "PLAYER_AURAS_CHANGED" then
-        CBTriggerScan()
+        -- Set dirty flag only; the poll timer will do the actual scan.
+        -- This prevents a simultaneous burst when a boss debuffs all 40 players at once.
+        cbScanDirty = true
 
     end
 end)
