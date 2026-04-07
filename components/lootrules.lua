@@ -78,7 +78,7 @@ local ART_LR_ZONES = {
     { key="zg",      label="Zul'Gurub",            zone="Zul'Gurub"                                                                              },
     { key="tmh",     label="Timbermaw Hold",       zone="Timbermaw Hold"                                                                         },
     { key="aq20",    label="Ruins of AQ",          zone="Ruins of Ahn'Qiraj"                                                                     },
-    { key="aq40",    label="Temple of AQ",         zone="Temple of Ahn'Qiraj"                                                                    },
+    { key="aq40",    label="Temple of AQ",         zone="Temple of Ahn'Qiraj",  zones={"Ahn'Qiraj"}                                          },
     { key="naxx",    label="Naxxramas",            zone="Naxxramas",            zones={"The Upper Necropolis"}                                    },
     { key="esanc",   label="Emerald Sanctum",      zone="Emerald Sanctum"                                                                        },
     { key="kara10",  label="Karazhan (10-man)",    zone="The Tower of Karazhan", zones={"Tower of Karazhan", "The Rock of Desolation"}, maxRaid=14 },
