@@ -7,8 +7,9 @@ local tinsert = table.insert
 
 ART_BuffsList         = ART_BuffsList         or {}
 ART_Profiles          = ART_Profiles          or {}
-ART_Profiles["none"]  = ART_Profiles["none"]  or {}
-ART_ActiveProfileName = ART_ActiveProfileName or "Standard"
+ART_Profiles["none"]  = {}                          -- always empty, never deletable
+if not ART_Profiles["Default"] then ART_Profiles["Default"] = {} end
+ART_ActiveProfileName = ART_ActiveProfileName or "Default"
 ART_SpecBindings      = ART_SpecBindings      or {}
 ART_SalvationOverride = ART_SalvationOverride or "profile"
 
@@ -522,6 +523,17 @@ function AmptieRaidTools_InitAutoBuffs(body)
 		end
 	end
 
+	-- Enable/disable interaction based on whether the "none" profile is active
+	local function SetNoneMode(isNone)
+		local alpha = isNone and 0.35 or 1.0
+		for i = 1, getn(allCBs) do
+			allCBs[i]:EnableMouse(not isNone)
+			allCBs[i]:SetAlpha(alpha)
+		end
+		-- Save / Delete: gray out when profileEdit shows "none"
+		-- (actual guards already exist in the button handlers)
+	end
+
 	-- Restore checkboxes from ART_BuffsList
 	local function RestoreChecks()
 		for i = 1, getn(allCBs) do
@@ -534,14 +546,38 @@ function AmptieRaidTools_InitAutoBuffs(body)
 	-- Slot for RefreshSpecBindings (set later)
 	local refreshSpecBindings_fn = nil
 
+	-- Gray out Save/Delete when the edit box shows "none"
+	local function UpdateEditButtons()
+		local name = profileEdit:GetText()
+		local isNone = (name == "none")
+		local r, g, b = isNone and 0.4 or 1, isNone and 0.4 or 1, isNone and 0.4 or 1
+		saveBtnFS:SetTextColor(r, g, b, 1)
+		deleteBtnFS:SetTextColor(r, g, b, 1)
+	end
+
+	profileEdit:SetScript("OnTextChanged", function()
+		UpdateEditButtons()
+	end)
+
 	-- Update profile display
 	local function ProfileUI_Refresh()
-		ART_Profiles["none"] = {}  -- always empty, always present
+		ART_Profiles["none"]    = {}  -- always empty, never deletable
+		if not ART_Profiles["Default"] then ART_Profiles["Default"] = {} end
 		if not ART_Profiles[ART_ActiveProfileName] then
 			ART_ActiveProfileName = "none"
 		end
+		-- If only "none" and "Default" exist and nothing custom is active, use Default
+		if ART_ActiveProfileName == "none" then
+			local hasCustom = false
+			for name, _ in pairs(ART_Profiles) do
+				if name ~= "none" and name ~= "Default" then hasCustom = true; break end
+			end
+			if not hasCustom then ART_ActiveProfileName = "Default" end
+		end
 		activeLabel:SetText("Active: " .. (ART_ActiveProfileName or "--"))
 		profileEdit:SetText(ART_ActiveProfileName or "")
+		SetNoneMode(ART_ActiveProfileName == "none")
+		UpdateEditButtons()
 		if refreshSpecBindings_fn then refreshSpecBindings_fn() end
 	end
 	ART_AB_ProfileUI_Refresh_fn = ProfileUI_Refresh
