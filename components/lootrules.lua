@@ -39,7 +39,7 @@ local function GetLRDB()
                 buttons = {
                     { name="Main Spec", priority=1 },
                     { name="Off Spec",  priority=2 },
-                    { name="Pass",      priority=6 },
+                    { name="Pass",      priority=3 },
                 },
                 timer    = 60,
                 officers = {},
@@ -762,7 +762,9 @@ OpenVotePopup = function(s)
     nameFS:SetAllPoints(nameBtn)
     nameFS:SetJustifyH("LEFT")
     nameFS:SetJustifyV("MIDDLE")
-    nameFS:SetText(s.itemLink or "Unknown")
+    local nameText = s.itemLink or "Unknown"
+    if (s.quantity or 1) > 1 then nameText = nameText .. " |cFFFFD700x" .. tostring(s.quantity) .. "|r" end
+    nameFS:SetText(nameText)
     nameBtn.hyperlink = hl
     nameBtn.itemLink  = s.itemLink
     nameBtn:SetScript("OnEnter",function()
@@ -854,21 +856,32 @@ OpenVotePopup = function(s)
                 this:SetBackdropBorderColor(0.4,0.7,1,1)
                 this.label:SetTextColor(0.5,0.8,1,1)
                 if this.rollMax and this.rollMax > 0 then
+                    local dkpBidDV = (sess.isDKP and f.dkpBidEB) and (tonumber(f.dkpBidEB:GetText()) or 0) or 0
+                    if sess.isDKP and dkpBidDV <= 0 then
+                        f.statusFS:SetText("|cFFFF4444Please enter a DKP bid before voting.|r")
+                        return
+                    end
                     pendingDoubleVote = {
                         sid     = sess.sid,
                         btnIdx  = this.btnIdx,
                         btnName = this.btnName,
                         comment = comment,
                         max     = this.rollMax,
+                        dkp     = dkpBidDV,
                     }
                     RandomRoll(1, this.rollMax)
                 else
-                    local mySpec = (AmptieRaidTools_PlayerInfo and AmptieRaidTools_PlayerInfo.spec) or ""
-                    local dvMsg = "LC_DVOTE^"..sess.sid.."^"..this.btnIdx.."^"..comment.."^0^"..mySpec
+                    local mySpec  = (AmptieRaidTools_PlayerInfo and AmptieRaidTools_PlayerInfo.spec) or ""
+                    local dkpBid2 = (sess.isDKP and f.dkpBidEB) and (tonumber(f.dkpBidEB:GetText()) or 0) or 0
+                    if sess.isDKP and dkpBid2 <= 0 then
+                        f.statusFS:SetText("|cFFFF4444Please enter a DKP bid before voting.|r")
+                        return
+                    end
+                    local dvMsg = "LC_DVOTE^"..sess.sid.."^"..this.btnIdx.."^"..comment.."^0^"..mySpec.."^"..tostring(dkpBid2)
                     SendLC(dvMsg)
                     local myName = UnitName("player")
                     if myName then
-                        sess.dVotes[myName] = {btn=this.btnIdx, btnName=this.btnName, comment=comment, roll=0, spec=mySpec}
+                        sess.dVotes[myName] = {btn=this.btnIdx, btnName=this.btnName, comment=comment, roll=0, spec=mySpec, dkp=dkpBid2}
                     end
                 end
                 f.statusFS:SetText("|cFF88CCFF"..this.btnName.." noted — pick your main vote|r")
@@ -963,8 +976,9 @@ local function DoNormalAward(pname)
     local vd      = cs.votes and cs.votes[pname]
     local btnName = (vd and vd.btnName) or ""
     local roll    = (vd and vd.roll)    or 0
+    local dkp     = (vd and vd.dkp)     or 0
     local aMsg = "LC_AWARD^"..cs.sid.."^"..pname.."^"..(cs.itemLink or "")
-                 .."^"..btnName.."^"..tostring(roll)
+                 .."^"..btnName.."^"..tostring(roll).."^"..tostring(dkp)
     if not cs.isSim then
         local cidx = nil
         for ci = 1, 40 do
@@ -1223,10 +1237,102 @@ local function CreateCouncilFrame()
         cvb:SetPoint("RIGHT",countBtn,"LEFT",-4,0)
         row.cvoteBtn = cvb
         ab.rowPlayer = ""
+        ab.rowIsDV   = false
         ab:SetScript("OnClick",function()
             local cs = GetCouncilSession()
             if not cs or this.rowPlayer == "" then return end
-            local pname = this.rowPlayer
+            local pname   = this.rowPlayer
+            local isDVRow = this.rowIsDV
+
+            -- onlyDV path: Award was clicked on a DV row
+            if isDVRow then
+                local dvCnt = 0
+                if cs.dVotes then for _ in pairs(cs.dVotes) do dvCnt = dvCnt + 1 end end
+                if dvCnt == 1 then
+                    -- Single DV only → direct award, solo disenchant messages
+                    if councilFrame then councilFrame:SetFrameStrata("DIALOG") end
+                    StaticPopupDialogs["ART_LC_SOLO_TMOG"] = {
+                        text = "Award transmog to "..pname.."?\nThey must trade it to a raid disenchanter.",
+                        button1 = "Award", button2 = "Cancel",
+                        OnAccept = function()
+                            if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                            local cs2 = GetCouncilSession()
+                            if not cs2 then return end
+                            if not cs2.isSim then
+                                local cidx = nil
+                                for ci = 1, 40 do
+                                    local cn = GetMasterLootCandidate(ci)
+                                    if not cn then break end
+                                    if StripRealm(cn) == StripRealm(pname) then cidx = ci; break end
+                                end
+                                if not cidx then
+                                    DEFAULT_CHAT_FRAME:AddMessage("|cFFFF4444[ART-LC]|r "..pname.." not a loot candidate.")
+                                    return
+                                end
+                                GiveMasterLoot(cs2.slot, cidx)
+                            end
+                            local dvd   = cs2.dVotes and cs2.dVotes[pname]
+                            local dvDkp = (dvd and dvd.dkp) or 0
+                            local aMsg  = "LC_AWARD_SOLO_TMOG^"..cs2.sid.."^"..pname.."^"..(cs2.itemLink or "").."^"..tostring(dvDkp)
+                            SendLC(aMsg)
+                            cs2.awardCount = (cs2.awardCount or 0) + 1
+                            if not cs2.awardedTo then cs2.awardedTo = {} end
+                            tinsert(cs2.awardedTo, pname)
+                            if cs2.slots then
+                                local newSlots = {}; newSlots.n = 0
+                                for si = 2, getn(cs2.slots) do tinsert(newSlots, cs2.slots[si]) end
+                                cs2.slots = newSlots
+                                cs2.slot  = cs2.slots[1] or cs2.slot
+                            end
+                            local remaining = (cs2.quantity or 1) - cs2.awardCount
+                            if remaining <= 0 then cs2.awarded = pname end
+                            cs2.pendingTmogWinner = nil
+                            CloseVotePopup(cs2.sid)
+                            UpdateCouncilNav()
+                            RefreshCouncilRows()
+                        end,
+                        OnCancel = function()
+                            if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                        end,
+                        OnHide = function()
+                            if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                        end,
+                        timeout = 0, whileDead = true, hideOnEscape = true,
+                    }
+                    StaticPopup_Show("ART_LC_SOLO_TMOG")
+                else
+                    -- Multiple DV only → select this DV person as winner with confirmation popup.
+                    -- Clicking winner's own Award row again = cancel.
+                    if cs.pendingTmogWinner == pname then
+                        cs.pendingTmogWinner = nil
+                        RefreshCouncilRows()
+                        return
+                    end
+                    if councilFrame then councilFrame:SetFrameStrata("DIALOG") end
+                    StaticPopupDialogs["ART_LC_DV_WIN_ASK"] = {
+                        text = "Set "..pname.." as transmog winner?\nOther DV voters can then receive the item for transmog.",
+                        button1 = "Yes", button2 = "Cancel",
+                        OnAccept = function()
+                            if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                            local cs2 = GetCouncilSession()
+                            if not cs2 then return end
+                            cs2.pendingTmogWinner = pname
+                            RefreshCouncilRows()
+                        end,
+                        OnCancel = function()
+                            if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                        end,
+                        OnHide = function()
+                            if councilFrame then councilFrame:SetFrameStrata("FULLSCREEN_DIALOG") end
+                        end,
+                        timeout = 0, whileDead = true, hideOnEscape = true,
+                    }
+                    StaticPopup_Show("ART_LC_DV_WIN_ASK")
+                end
+                return
+            end
+
+            -- Standard path (non-DV row)
             -- Check if any DV votes exist in this session
             local hasDV = false
             if cs.dVotes then
@@ -1316,12 +1422,19 @@ local function CreateCouncilFrame()
                         end
                         GiveMasterLoot(cs2.slot, cidx)
                     end
-                    local wvd      = cs2.votes and cs2.votes[winPerson]
+                    local wvReg    = cs2.votes  and cs2.votes[winPerson]
+                    local wvDV     = cs2.dVotes and cs2.dVotes[winPerson]
+                    local isRegPass = wvReg and string.lower(wvReg.btnName or "") == "pass"
+                    -- Prefer DV vote data when regular vote is Pass or absent
+                    local wvd      = (wvReg and not isRegPass) and wvReg or (wvDV or wvReg)
                     local btnName2 = (wvd and wvd.btnName) or ""
                     local roll2    = (wvd and wvd.roll)    or 0
+                    local dkp2     = (wvd and wvd.dkp)     or 0
+                    local dvd2     = cs2.dVotes and cs2.dVotes[dvPerson]
+                    local dvDkp    = (dvd2 and dvd2.dkp)   or 0
                     local dvSub    = GetPlayerSubgroup(winPerson) or 0
                     local aMsg = "LC_AWARD_TMOG^"..cs2.sid.."^"..winPerson.."^"..dvPerson.."^"..(cs2.itemLink or "")
-                                 .."^"..btnName2.."^"..tostring(roll2).."^"..tostring(dvSub)
+                                 .."^"..btnName2.."^"..tostring(roll2).."^"..tostring(dkp2).."^"..tostring(dvSub).."^"..tostring(dvDkp)
                     SendLC(aMsg)
                     cs2.awardCount = (cs2.awardCount or 0) + 1
                     if not cs2.awardedTo then cs2.awardedTo = {} end
@@ -1453,7 +1566,7 @@ RefreshCouncilRows = function()
                 btnName   = dvd.btnName or "",
                 priority  = 99,
                 roll      = dvd.roll or 0,
-                dkp       = 0,
+                dkp       = dvd.dkp  or 0,
                 comment   = "",
                 spec      = dvd.spec or "",
                 class     = rc.class or "",
@@ -1473,7 +1586,7 @@ RefreshCouncilRows = function()
                     btnName   = dvd.btnName or "",
                     priority  = 99,
                     roll      = dvd.roll or 0,
-                    dkp       = 0,
+                    dkp       = dvd.dkp  or 0,
                     comment   = "",
                     spec      = dvd.spec or "",
                     class     = rc.class or "",
@@ -1497,7 +1610,30 @@ RefreshCouncilRows = function()
     local prim = sortCfg.primary   or "priority"
     local sec  = sortCfg.secondary or "roll"
     local terc = sortCfg.tertiary  or "name"
+    -- Detect onlyDV: no non-DV, non-pass entries
+    local nonDVCount = 0
+    local dvCount    = 0
+    for i = 1, ec do
+        if entries[i].isDVRow then dvCount = dvCount + 1
+        else nonDVCount = nonDVCount + 1 end
+    end
+    local onlyDV = (nonDVCount == 0 and dvCount > 0)
+
     table.sort(entries, function(a, b)
+        -- DV rows always sort after non-DV rows
+        if a.isDVRow ~= b.isDVRow then return b.isDVRow end
+        -- DV vs DV: sort by highest roll (LC) or highest DKP bid (DKP mode)
+        if a.isDVRow and b.isDVRow then
+            if cs and cs.isDKP then
+                local da, db = -(a.dkp or 0), -(b.dkp or 0)
+                if da ~= db then return da < db end
+            else
+                local ra, rb = -(a.roll or 0), -(b.roll or 0)
+                if ra ~= rb then return ra < rb end
+            end
+            return (a.player or "") < (b.player or "")
+        end
+        -- Non-DV vs non-DV: use configured sort
         local av1, bv1 = sortVal(a, prim), sortVal(b, prim)
         if av1 ~= bv1 then return av1 < bv1 end
         local av2, bv2 = sortVal(a, sec),  sortVal(b, sec)
@@ -1529,10 +1665,28 @@ RefreshCouncilRows = function()
                 row.rollFS:SetText(e.roll > 0 and "|cFFFFD700"..tostring(e.roll).."|r" or "")
             end
             row.commentFS:SetText(e.comment)
-            row.awardBtn.rowPlayer = e.isDVRow and "" or e.player
-            if not e.isDVRow and (cs.isML or IsRaidLeader()) and not cs.awarded then row.awardBtn:Show() else row.awardBtn:Hide() end
+            local canAward = (cs.isML or IsRaidLeader()) and not cs.awarded
+            -- Award button visibility:
+            --   Non-DV rows: always when canAward
+            --   DV rows: only in onlyDV mode, phase 1 (no winner yet) = all rows;
+            --            phase 2 (winner chosen) = only winner row (to cancel)
+            local showAward
+            if e.isDVRow then
+                showAward = canAward and onlyDV
+                            and (not cs.pendingTmogWinner or e.player == cs.pendingTmogWinner)
+            else
+                showAward = canAward
+            end
+            row.awardBtn.rowPlayer = showAward and e.player or ""
+            row.awardBtn.rowIsDV   = e.isDVRow
+            if showAward then row.awardBtn:Show() else row.awardBtn:Hide() end
             if row.tmogBtn then
-                if e.isDVRow and (cs.isML or IsRaidLeader()) and not cs.awarded and cs.pendingTmogWinner then
+                -- Show Tmog on DV rows when pendingTmogWinner is set.
+                -- In onlyDV mode: exclude winner's own row (they ARE the winner, can't be recipient).
+                -- In normal mode: show on all DV rows (MS winner has no DV row, or does — either way allowed).
+                local showTmog = e.isDVRow and canAward and cs.pendingTmogWinner
+                                 and (not onlyDV or e.player ~= cs.pendingTmogWinner)
+                if showTmog then
                     row.tmogBtn.dvPlayer = e.player
                     row.tmogBtn:Show()
                 else
@@ -2053,11 +2207,14 @@ OnLCMessage = function(sender, msg)
         local aLink      = parts[4] or ""
         local voteName   = parts[5] or ""
         local roll       = tonumber(parts[6]) or 0
-        -- Build announcement line: "[aRT] [Player] receives [Item] for [Vote]" (+ roll if present)
+        local dkp        = tonumber(parts[7]) or 0
+        -- Build announcement line
         local annLine
         if voteName ~= "" then
             annLine = "|cffffff00[aRT]|r "..winnerName.." receives "..aLink.." for "..voteName
-            if roll > 0 then
+            if dkp > 0 then
+                annLine = annLine.." ("..tostring(dkp).." DKP)"
+            elseif roll > 0 then
                 annLine = annLine.." (Roll: "..tostring(roll)..")"
             end
         else
@@ -2106,17 +2263,24 @@ OnLCMessage = function(sender, msg)
         local aLink      = parts[5] or ""
         local voteName   = parts[6] or ""
         local roll       = tonumber(parts[7]) or 0
-        local dvSub      = tonumber(parts[8]) or 0
-        -- Line 1: winner announcement with vote type and roll
+        local dkp        = tonumber(parts[8]) or 0
+        local dvSub      = tonumber(parts[9]) or 0
+        local dvDkp      = tonumber(parts[10]) or 0
+        -- Line 1: winner announcement with vote type, DKP or roll
         local line1
         if voteName ~= "" then
             line1 = "|cffffff00[aRT]|r "..winnerName.." wins "..aLink.." for "..voteName
-            if roll > 0 then line1 = line1.." (Roll: "..tostring(roll)..")" end
+            if dkp > 0 then
+                line1 = line1.." ("..tostring(dkp).." DKP)"
+            elseif roll > 0 then
+                line1 = line1.." (Roll: "..tostring(roll)..")"
+            end
         else
             line1 = "|cffffff00[aRT]|r "..winnerName.." wins "..aLink
         end
-        -- Line 2: transmog recipient
+        -- Line 2: transmog recipient (+ DKP bid if present)
         local line2 = "|cffffff00[aRT]|r "..tmogName.." receives the transmog"
+        if dvDkp > 0 then line2 = line2.." ("..tostring(dvDkp).." DKP)" end
         -- Line 3: trade instruction with subgroup
         local subStr = dvSub > 0 and " (Group "..tostring(dvSub)..")" or ""
         local line3 = "|cffffff00[aRT]|r "..tmogName.." "..aLink.." please trade to "..winnerName..subStr
@@ -2156,6 +2320,49 @@ OnLCMessage = function(sender, msg)
             UpdateCouncilNav(); RefreshCouncilRows()
         end
 
+    elseif tag == "LC_AWARD_SOLO_TMOG" then
+        local s        = allSessions[parts[2]]
+        local tmogName = parts[3]
+        local aLink    = parts[4] or ""
+        local dvDkp    = tonumber(parts[5]) or 0
+        -- Line 1: transmog recipient announcement
+        local line1 = "|cffffff00[aRT]|r "..tmogName.." receives the transmog"
+        if dvDkp > 0 then line1 = line1.." ("..tostring(dvDkp).." DKP)" end
+        -- Line 2: trade to disenchanter
+        local line2 = "|cffffff00[aRT]|r "..tmogName.." "..aLink.." please trade to a raid disenchanter."
+        local myName = UnitName("player")
+        if myName == sender or (not sender) then
+            local ch
+            if GetNumRaidMembers()    > 0 then ch = "RAID"
+            elseif GetNumPartyMembers() > 0 then ch = "PARTY" end
+            if ch then
+                SendChatMessage(line1, ch)
+                SendChatMessage(line2, ch)
+            else
+                DEFAULT_CHAT_FRAME:AddMessage(line1)
+                DEFAULT_CHAT_FRAME:AddMessage(line2)
+            end
+        else
+            DEFAULT_CHAT_FRAME:AddMessage(line1)
+            DEFAULT_CHAT_FRAME:AddMessage(line2)
+        end
+        if s then
+            s.awardCount = (s.awardCount or 0) + 1
+            if not s.awardedTo then s.awardedTo = {} end
+            tinsert(s.awardedTo, tmogName)
+            if s.slots and getn(s.slots) > 0 then
+                local newSlots = {}; newSlots.n = 0
+                for si = 2, getn(s.slots) do tinsert(newSlots, s.slots[si]) end
+                s.slots = newSlots
+            end
+            local remaining = (s.quantity or 1) - s.awardCount
+            if remaining <= 0 then s.awarded = tmogName end
+            CloseVotePopup(s.sid)
+        end
+        if councilFrame and councilFrame:IsShown() then
+            UpdateCouncilNav(); RefreshCouncilRows()
+        end
+
     elseif tag == "LC_CVOTE" then
         local s = allSessions[parts[2]]; if not s then return end
         local target = parts[3]
@@ -2185,12 +2392,13 @@ OnLCMessage = function(sender, msg)
         local comment = parts[4] or ""
         local rollVal = tonumber(parts[5]) or 0
         local spec    = parts[6] or ""
+        local dkpBid  = tonumber(parts[7]) or 0
         local btnName = ""
         if s.buttons and btnIdx and s.buttons[btnIdx] then
             btnName = s.buttons[btnIdx].name or ""
         end
         if sender then
-            s.dVotes[sender] = {btn=btnIdx, btnName=btnName, comment=comment, roll=rollVal, spec=spec}
+            s.dVotes[sender] = {btn=btnIdx, btnName=btnName, comment=comment, roll=rollVal, spec=spec, dkp=dkpBid}
         end
         if councilFrame and councilFrame:IsShown() and GetCouncilSession() == s then
             UpdateCouncilNav(); RefreshCouncilRows()
@@ -2344,10 +2552,11 @@ lcRollFrame:SetScript("OnEvent",function()
         local vs  = allSessions[pdv.sid]
         if vs and not vs.closed then
             pendingDoubleVote = nil
-            local dvMsg = "LC_DVOTE^"..pdv.sid.."^"..pdv.btnIdx.."^"..pdv.comment.."^"..tostring(val).."^"..mySpec
+            local dkpBid3 = pdv.dkp or 0
+            local dvMsg = "LC_DVOTE^"..pdv.sid.."^"..pdv.btnIdx.."^"..pdv.comment.."^"..tostring(val).."^"..mySpec.."^"..tostring(dkpBid3)
             SendLC(dvMsg)
             if myName then
-                vs.dVotes[myName] = {btn=pdv.btnIdx, btnName=pdv.btnName, comment=pdv.comment, roll=val, spec=mySpec}
+                vs.dVotes[myName] = {btn=pdv.btnIdx, btnName=pdv.btnName, comment=pdv.comment, roll=val, spec=mySpec, dkp=dkpBid3}
             end
         end
         return
