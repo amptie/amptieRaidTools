@@ -100,33 +100,164 @@ local function GetActiveMCProfile()
 end
 
 -- ============================================================
--- Buff scanning (own buffs only)
+-- Buff scanning (own buffs only) — SpellID primary, Texture fallback
 -- ============================================================
-local mcBuffCache = {}  -- [buffName] = timeLeft or true
+
+-- SpellID → buffKey (SuperWoW path: zero false positives)
+local MC_SPELL_TO_KEY = {
+    -- Flasks
+    [17626]="FLASK_TITANS", [13512]="FLASK_SUP_PWR", [17627]="FLASK_DIST_WIS", [17629]="FLASK_CHROM_RES",
+    -- Protection
+    [17549]="GR_ARCANE_PROT", [17543]="GR_FIRE_PROT", [17544]="GR_FROST_PROT",
+    [17548]="GR_SHADOW_PROT", [17545]="GR_HOLY_PROT", [17546]="GR_NATURE_PROT", [7254]="NATURE_PROT",
+    -- Defense/Zanza
+    [24382]="SPIRIT_ZANZA", [3593]="ELX_FORTITUDE", [11348]="ELX_SUP_DEFENSE",
+    [24417]="SHEEN_ZANZA", [24383]="SWIFTNESS_ZANZA",
+    -- Physical
+    [17538]="ELX_MONGOOSE", [11405]="ELX_GIANTS", [16323]="JUJU_POWER", [17038]="WINTERFALL_FW",
+    [16329]="JUJU_MIGHT", [17528]="MIGHTY_RAGE", [10667]="ROIDS", [10669]="GROUND_SCORPOK",
+    [16322]="JUJU_FLURRY",
+    -- Hybrid
+    [36931]="CONCOCTION_ARCANE", [36928]="CONCOCTION_EMERALD", [36934]="CONCOCTION_DREAM",
+    -- Caster/Healer
+    [17539]="GR_ARCANE_ELX", [45427]="DREAMSHARD_ELX", [26276]="ELX_GR_FIRE_PWR",
+    [11474]="ELX_SHADOW_PWR", [45988]="ELX_GR_NATURE_PWR", [56545]="ELX_GR_ARCANE_PWR",
+    [56544]="ELX_GR_FROST_PWR", [45489]="DREAMTONIC", [24363]="MAGEBLOOD", [22790]="KREEG_BEATDOWN",
+    -- Drinks
+    [25804]="RUMSEY_RUM", [57106]="MEDIVH_MERLOT", [57107]="MEDIVH_MERLOT_BLUE",
+}
+
+-- Food spell IDs (all map to sentinel "FOOD")
+local MC_FOOD_SPELLS = {
+    [19705]=true,[19706]=true,[19708]=true,[19709]=true,[19710]=true,[19711]=true,
+    [24799]=true,[24870]=true,[25694]=true,[25941]=true,[33431]=true,[33433]=true,
+    [34728]=true,[34729]=true,[34730]=true,[34731]=true,[34732]=true,[34733]=true,
+    [36937]=true,[36939]=true,[45623]=true,[45628]=true,[46083]=true,[49014]=true,
+    [57042]=true,[57044]=true,[57046]=true,
+    [25661]=true,[33435]=true,  -- Increased Stamina
+    [18192]=true,               -- Increased Agility
+    [22730]=true,               -- Increased Intellect
+    [49553]=true,               -- Increased Healing Bonus
+    [18194]=true,               -- Mana Regeneration (food)
+    [15852]=true,               -- Dragonbreath Chili
+}
+
+-- Texture → buffKey fallback (non-SuperWoW: texture is more unique than buff name)
+local MC_TEX_TO_KEY = {
+    -- Flasks
+    ["Interface\\Icons\\INV_Potion_62"]="FLASK_TITANS",
+    ["Interface\\Icons\\INV_Potion_41"]="FLASK_SUP_PWR",
+    ["Interface\\Icons\\inv_potion_120"]="FLASK_DIST_WIS",
+    ["Interface\\Icons\\inv_potion_128"]="FLASK_CHROM_RES",
+    -- Protection (unique textures per potion type)
+    ["Interface\\Icons\\Spell_Holy_PrayerOfHealing02"]="GR_ARCANE_PROT",
+    ["Interface\\Icons\\Spell_Fire_FireArmor"]="GR_FIRE_PROT",
+    ["Interface\\Icons\\Spell_Frost_FrostArmor02"]="GR_FROST_PROT",
+    ["Interface\\Icons\\Spell_Shadow_RagingScream"]="GR_SHADOW_PROT",
+    ["Interface\\Icons\\Spell_Holy_BlessingOfProtection"]="GR_HOLY_PROT",
+    ["Interface\\Icons\\Spell_Nature_SpiritArmor"]="GR_NATURE_PROT",
+    -- Defense/Zanza
+    ["Interface\\Icons\\INV_Potion_30"]="SPIRIT_ZANZA",
+    ["Interface\\Icons\\INV_Potion_44"]="ELX_FORTITUDE",
+    ["Interface\\Icons\\INV_Potion_86"]="ELX_SUP_DEFENSE",
+    ["Interface\\Icons\\INV_Potion_29"]="SHEEN_ZANZA",
+    ["Interface\\Icons\\INV_Potion_31"]="SWIFTNESS_ZANZA",
+    -- Physical
+    ["Interface\\Icons\\INV_Potion_32"]="ELX_MONGOOSE",
+    ["Interface\\Icons\\INV_Potion_61"]="ELX_GIANTS",
+    ["Interface\\Icons\\INV_Misc_MonsterScales_11"]="JUJU_POWER",
+    ["Interface\\Icons\\INV_Potion_92"]="WINTERFALL_FW",
+    ["Interface\\Icons\\INV_Misc_MonsterScales_07"]="JUJU_MIGHT",
+    ["Interface\\Icons\\Ability_Warrior_InnerRage"]="MIGHTY_RAGE",
+    ["Interface\\Icons\\Spell_Nature_Strength"]="ROIDS",
+    ["Interface\\Icons\\Spell_Nature_ForceOfNature"]="GROUND_SCORPOK",
+    ["Interface\\Icons\\INV_Misc_MonsterScales_17"]="JUJU_FLURRY",
+    -- Hybrid
+    ["Interface\\Icons\\inv_yellow_purple_elixir_2"]="CONCOCTION_ARCANE",
+    ["Interface\\Icons\\inv_blue_gold_elixir_2"]="CONCOCTION_EMERALD",
+    ["Interface\\Icons\\inv_green_pink_elixir_1"]="CONCOCTION_DREAM",
+    -- Caster/Healer
+    ["Interface\\Icons\\INV_Potion_25"]="GR_ARCANE_ELX",
+    ["Interface\\Icons\\inv_potion_113"]="DREAMSHARD_ELX",
+    ["Interface\\Icons\\INV_Potion_60"]="ELX_GR_FIRE_PWR",
+    ["Interface\\Icons\\INV_Potion_46"]="ELX_SHADOW_PWR",
+    ["Interface\\Icons\\inv_potion_106"]="ELX_GR_NATURE_PWR",
+    ["Interface\\Icons\\inv_potion_81"]="ELX_GR_ARCANE_PWR",
+    ["Interface\\Icons\\INV_Potion_13"]="ELX_GR_FROST_PWR",
+    ["Interface\\Icons\\inv_potion_114"]="DREAMTONIC",
+    ["Interface\\Icons\\INV_Potion_45"]="MAGEBLOOD",
+    ["Interface\\Icons\\INV_Drink_05"]="KREEG_BEATDOWN",
+    -- Drinks
+    ["Interface\\Icons\\INV_Drink_04"]="RUMSEY_RUM",  -- shared texture, but acceptable
+    -- Food sentinel texture
+    ["Interface\\Icons\\Spell_Misc_Food"]="FOOD",
+    ["Interface\\Icons\\INV_Boots_Plate_03"]="FOOD",      -- Increased Stamina
+    ["Interface\\Icons\\INV_Gauntlets_19"]="FOOD",         -- Increased Agility
+    ["Interface\\Icons\\INV_Misc_Organ_03"]="FOOD",        -- Increased Intellect
+    ["Interface\\Icons\\Spell_Nature_HealingWay"]="FOOD",  -- Increased Healing Bonus
+    ["Interface\\Icons\\Spell_Nature_ManaRegenTotem"]="FOOD",  -- Mana Regeneration (food)
+    ["Interface\\Icons\\Spell_Fire_Incinerate"]="FOOD",    -- Dragonbreath Chili
+}
+
+-- Buff cache: [buffKey] = timeLeft or true;  mcFoodActive = timeLeft or false
+local mcBuffById = {}
+local mcFoodActive = false
 
 local function MC_ScanPlayerBuffs()
-    for k in pairs(mcBuffCache) do mcBuffCache[k] = nil end
-    for i = 0, 39 do
-        local buffIndex = GetPlayerBuff(i, "HELPFUL")
-        if buffIndex < 0 then break end
-        -- Get name via SuperWoW or tooltip fallback
-        local bname = nil
+    for k in pairs(mcBuffById) do mcBuffById[k] = nil end
+    mcFoodActive = false
+
+    for i = 1, 40 do
+        local tex, stacks, spellId
         if MC_HAS_SUPERWOW then
-            local _, _, spellId = UnitBuff("player", i + 1)
-            if spellId and spellId > 0 then bname = SpellInfo(spellId) end
+            tex, stacks, spellId = UnitBuff("player", i)
+        else
+            tex = UnitBuff("player", i)
         end
-        if not bname then
-            if not mcScanTipText then mcScanTipText = getglobal("ART_MC_ScanTipTextLeft1") end
-            mcScanTip:SetOwner(UIParent, "ANCHOR_NONE")
-            mcScanTip:SetPlayerBuff(buffIndex)
-            bname = mcScanTipText and mcScanTipText:GetText()
+        if not tex then break end
+
+        local buffKey = nil
+        local isFood  = false
+
+        -- Primary: SpellID lookup (SuperWoW — zero false positives)
+        if spellId and spellId > 0 then
+            buffKey = MC_SPELL_TO_KEY[spellId]
+            if MC_FOOD_SPELLS[spellId] then isFood = true end
         end
-        if bname and bname ~= "" then
-            local tl = GetPlayerBuffTimeLeft(buffIndex)
-            mcBuffCache[bname] = (tl and tl > 0) and tl or true
+
+        -- Fallback: Texture lookup (non-SuperWoW)
+        if not buffKey and not isFood and tex then
+            local texKey = MC_TEX_TO_KEY[tex]
+            if texKey == "FOOD" then
+                isFood = true
+            elseif texKey then
+                buffKey = texKey
+            end
+        end
+
+        -- Get time remaining
+        local tl = GetPlayerBuffTimeLeft(i - 1)
+        local val = (tl and tl > 0) and tl or true
+
+        if isFood then
+            if type(val) == "number" then
+                if not mcFoodActive or (type(mcFoodActive) ~= "number") or val > mcFoodActive then
+                    mcFoodActive = val
+                end
+            elseif not mcFoodActive then
+                mcFoodActive = true
+            end
+        elseif buffKey then
+            local existing = mcBuffById[buffKey]
+            if not existing then
+                mcBuffById[buffKey] = val
+            elseif type(val) == "number" and val > 0 then
+                if type(existing) ~= "number" or val > existing then
+                    mcBuffById[buffKey] = val
+                end
+            end
         end
     end
-    return mcBuffCache
 end
 
 -- ============================================================
@@ -424,28 +555,14 @@ RefreshMCOverlay = function()
                     timeLeft = hasMH and ((mhExp or 0) / 1000) or 0
                 end
             elseif bcBuff.isFood then
-                -- Food: check if ANY known food buff is active
-                local foodAny = ART_BC_BY_KEY_ALL and ART_BC_BY_KEY_ALL["FOOD_ANY"]
-                local foodNames = foodAny and foodAny.buffNames
-                if foodNames then
-                    for fi = 1, getn(foodNames) do
-                        local v = mcBuffCache[foodNames[fi]]
-                        if v then
-                            hasBuff = true
-                            if type(v) == "number" and v > timeLeft then timeLeft = v end
-                        end
-                    end
+                -- Food: check mcFoodActive (set by SpellID or Texture scan)
+                if mcFoodActive then
+                    hasBuff = true
+                    if type(mcFoodActive) == "number" then timeLeft = mcFoodActive end
                 end
-            elseif bcBuff.buffNames then
-                for fi = 1, getn(bcBuff.buffNames) do
-                    local v = mcBuffCache[bcBuff.buffNames[fi]]
-                    if v then
-                        hasBuff = true
-                        if type(v) == "number" and v > timeLeft then timeLeft = v end
-                    end
-                end
-            elseif bcBuff.buffName then
-                local v = mcBuffCache[bcBuff.buffName]
+            else
+                -- Regular consumable: look up by buffKey in mcBuffById
+                local v = mcBuffById[bk]
                 if v then
                     hasBuff = true
                     if type(v) == "number" then timeLeft = v end

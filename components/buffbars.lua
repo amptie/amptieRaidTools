@@ -763,7 +763,8 @@ local function BBUpdateBuffBar()
         return
     end
     bbBuffFrame:SetAlpha(1)
-    bbBuffFrame:EnableMouse(true)
+    -- Only enable mouse on frame when unlocked (for drag); locked = mouse pass-through
+    bbBuffFrame:EnableMouse(not buffLocked)
 end
 
 local function BBRefreshBuffTimers()
@@ -905,7 +906,8 @@ local function BBUpdateDebuffBar()
         return
     end
     bbDebuffFrame:SetAlpha(1)
-    bbDebuffFrame:EnableMouse(true)
+    local debuffLocked = db and db.debuffBarLocked
+    bbDebuffFrame:EnableMouse(not debuffLocked)
 end
 
 -- ============================================================
@@ -920,7 +922,7 @@ local function BBCreateWeaponBar()
     bbWeaponFrame:SetFrameStrata("MEDIUM")
     bbWeaponFrame:SetMovable(true)
     bbWeaponFrame:SetClampedToScreen(true)
-    bbWeaponFrame:EnableMouse(true)
+    bbWeaponFrame:EnableMouse(not (db and db.weaponBarLocked))
     -- Frame has no visible backdrop; a child frame provides the sized backdrop
     bbWeaponFrame:SetBackdrop(nil)
     bbWeaponFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", db and db.weaponBarX or 0, db and db.weaponBarY or -240)
@@ -1005,6 +1007,7 @@ local function BBUpdateWeaponBar()
 
     -- Locked + no enchants: hide buttons and backdrop but keep the frame at its
     -- last valid size so the TOPRIGHT anchor does not drift when enchants return.
+    bbWeaponFrame:EnableMouse(not locked)
     if locked and visible == 0 then
         for i = 1, BB_MAX_WEAPONS do bbWeaponBtns[i]:Hide() end
         if bbWeaponFrame.backdropChild then bbWeaponFrame.backdropChild:Hide() end
