@@ -173,7 +173,7 @@ local function MC_ScanBags()
                     local bk = idToKey[id]
                     if bk then
                         local _, cnt = GetContainerItemInfo(bag, slot)
-                        mcBagCache[bk] = (mcBagCache[bk] or 0) + math.abs(cnt or 1)
+                        mcBagCache[bk] = (mcBagCache[bk] or 0) + MC_ItemCount(cnt)
                     end
                 end
             end
@@ -539,7 +539,6 @@ RefreshMCOverlay = function()
                 end)
                 btn:SetScript("OnLeave", function() MCTipHide() end)
                 btn:SetScript("OnClick", function()
-                    if mcInCombat then return end
                     if not GetMCDB().ovlLocked then return end
                     if this.buffKey then MC_UseItem(this.buffKey, this.weaponSlot) end
                 end)
@@ -669,9 +668,19 @@ end)
 -- Bank Restock
 -- ============================================================
 local MC_BANK_BAGS = { -1, 5, 6, 7, 8, 9, 10 }
-local MC_RESTOCK_DELAY = 0.15
+local MC_RESTOCK_DELAY = 0.3
 local mcRestockQueue = {}  -- { {bankBag, bankSlot, amount}, ... }
 local mcRestockActive = false
+
+-- Resolve stack/charge count from GetContainerItemInfo.
+-- Normal items: positive count = stack size.
+-- Charge items (Brilliant Oils): negative count = charges per item; count each item as 1.
+local function MC_ItemCount(cnt)
+    if not cnt then return 1 end
+    if cnt < 0 then return 1 end  -- charge-based item: 1 item per slot
+    if cnt == 0 then return 1 end
+    return cnt
+end
 
 -- Count item in inventory bags 0-4
 local function MC_CountInBags(itemIds)
@@ -686,7 +695,7 @@ local function MC_CountInBags(itemIds)
                 local _, _, idStr = sfind(link, "item:(%d+):")
                 if idStr and idSet[tonumber(idStr)] then
                     local _, cnt = GetContainerItemInfo(bag, slot)
-                    count = count + math.abs(cnt or 1)
+                    count = count + MC_ItemCount(cnt)
                 end
             end
         end
@@ -708,7 +717,7 @@ local function MC_FindInBank(itemIds)
                 local _, _, idStr = sfind(link, "item:(%d+):")
                 if idStr and idSet[tonumber(idStr)] then
                     local _, cnt = GetContainerItemInfo(bankBag, slot)
-                    tinsert(found, { bag = bankBag, slot = slot, count = math.abs(cnt or 1), itemId = tonumber(idStr) })
+                    tinsert(found, { bag = bankBag, slot = slot, count = MC_ItemCount(cnt), itemId = tonumber(idStr), isCharge = (cnt and cnt < 0) })
                 end
             end
         end
@@ -744,7 +753,7 @@ local function MC_RestockFromBank()
                         local bs = bankStacks[si]
                         local take = need
                         if take > bs.count then take = bs.count end
-                        tinsert(mcRestockQueue, { bag = bs.bag, slot = bs.slot, amount = take, full = (take >= bs.count), itemId = bs.itemId })
+                        tinsert(mcRestockQueue, { bag = bs.bag, slot = bs.slot, amount = take, full = (take >= bs.count) or bs.isCharge, itemId = bs.itemId, isCharge = bs.isCharge })
                         need = need - take
                     end
                     local moved = (wanted - have) - need
@@ -783,23 +792,37 @@ mcRestockFrame:SetScript("OnUpdate", function()
         mcBagDirty = true
         return
     end
+    -- Clear cursor first (safety: drop anything stuck on cursor)
+    if CursorHasItem() then PutItemInBackpack() end
+
     local entry = mcRestockQueue[mcRestockIdx]
     if entry.full then
         PickupContainerItem(entry.bag, entry.slot)
     else
         SplitContainerItem(entry.bag, entry.slot, entry.amount)
     end
-    -- Try to merge with existing partial stacks first
-    if CursorHasItem() and entry.itemId then
+
+    if not CursorHasItem() then return end  -- pickup failed, skip
+
+    if entry.isCharge then
+        -- Charge items: never merge, always place in empty slot
+        PutItemInBackpack()
+        if CursorHasItem() then
+            for b = 1, 4 do
+                PutItemInBag(19 + b)
+                if not CursorHasItem() then break end
+            end
+        end
+    else
+        -- Normal items: try to merge with existing partial stack first
         local placed = false
         for bag = 0, 4 do
             local slots = GetContainerNumSlots(bag)
             for slot = 1, slots do
                 local link = GetContainerItemLink(bag, slot)
-                if link then
+                if link and entry.itemId then
                     local _, _, idStr = sfind(link, "item:(%d+):")
                     if idStr and tonumber(idStr) == entry.itemId then
-                        -- Found a stack of the same item — PickupContainerItem merges
                         PickupContainerItem(bag, slot)
                         placed = true
                         break
@@ -808,14 +831,14 @@ mcRestockFrame:SetScript("OnUpdate", function()
             end
             if placed then break end
         end
-    end
-    -- If still on cursor (no partial stack or stack was full), place in any free slot
-    if CursorHasItem() then
-        PutItemInBackpack()
+        -- If no merge happened, place in any free slot
         if CursorHasItem() then
-            for b = 1, 4 do
-                PutItemInBag(19 + b)
-                if not CursorHasItem() then break end
+            PutItemInBackpack()
+            if CursorHasItem() then
+                for b = 1, 4 do
+                    PutItemInBag(19 + b)
+                    if not CursorHasItem() then break end
+                end
             end
         end
     end
@@ -839,10 +862,8 @@ mcEventFrame:SetScript("OnEvent", function()
     local evt = event
     if evt == "PLAYER_REGEN_DISABLED" then
         mcInCombat = true
-        MCSetOverlayCombatState(true)
     elseif evt == "PLAYER_REGEN_ENABLED" then
         mcInCombat = false
-        MCSetOverlayCombatState(false)
         if mcOverlayFrame and mcOverlayFrame:IsShown() then RefreshMCOverlay() end
     elseif evt == "BANKFRAME_OPENED" then
         MC_RestockFromBank()
@@ -863,7 +884,6 @@ end)
 
 local mcPollFrame = CreateFrame("Frame", nil, UIParent)
 mcPollFrame:SetScript("OnUpdate", function()
-    if mcInCombat then return end
     local dt = arg1 or 0
     mcPollTimer = mcPollTimer + dt
     if mcPollTimer >= MC_POLL_INTERVAL then
@@ -1116,14 +1136,14 @@ function AmptieRaidTools_InitMyConsumes(body)
                                          FOOD_WILDHAMMER_YAM=true, FOOD_TELABIM_MEDLEY=true, FOOD_SANDSWEPT_SPICY=true,
                                          FOOD_DEEP_SEA_STEW=true, FOOD_GURUBASHI_GUMBO=true} },
         { header="Melee",          keys={ELX_MONGOOSE=true, ELX_GIANTS=true, JUJU_POWER=true, WINTERFALL_FW=true,
-                                         JUJU_MIGHT=true, MIGHTY_RAGE=true, ROIDS=true, GROUND_SCORPOK=true,
+                                         JUJU_MIGHT=true, JUJU_FLURRY=true, MIGHTY_RAGE=true, ROIDS=true, GROUND_SCORPOK=true,
                                          FOOD_POWER_MUSH=true, FOOD_DESERT_DUMP=true, FOOD_MIGHTFISH=true,
                                          FOOD_GRILLED_SQUID=true, FOOD_SOUR_BERRY=true, FOOD_TELABIM_SURP=true,
                                          FOOD_SANDSWEPT_CRUNCH=true} },
         { header="Caster / Healer", keys={GR_ARCANE_ELX=true, DREAMSHARD_ELX=true, ELX_GR_FIRE_PWR=true,
                                           ELX_SHADOW_PWR=true, ELX_GR_NATURE_PWR=true, ELX_GR_ARCANE_PWR=true,
                                           ELX_GR_FROST_PWR=true, DREAMTONIC=true, MAGEBLOOD=true,
-                                          MEDIVH_MERLOT_BLUE=true,
+                                          MEDIVH_MERLOT_BLUE=true, KREEG_BEATDOWN=true,
                                           FOOD_NIGHTFIN=true, FOOD_SOUR_GRAPES=true, FOOD_TELABIM_DELIGHT=true,
                                           FOOD_HERBAL_SALAD=true, FOOD_WATERMELON=true, FOOD_RUNN_TUM=true,
                                           FOOD_HOT_BASS=true} },
@@ -1918,9 +1938,10 @@ function AmptieRaidTools_InitMyConsumes(body)
         local _, myClass = UnitClass("player")
         myClass = myClass and string.upper(myClass) or ""
 
-        -- Eligible: has itemKey OR isFood OR has itemIds OR has spellCast; respects classReq
+        -- Eligible for Rules dropdown: exclude on-use items (those go to Restock only)
         local function mcEligible(b)
             if MC_EXCLUDE[b.key] then return false end
+            if b.sec == "onuse" then return false end
             if b.classReq and b.classReq ~= myClass then return false end
             return b.itemKey or b.isFood or b.itemIds or b.spellCast
         end

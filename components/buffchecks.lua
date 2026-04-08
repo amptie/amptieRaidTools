@@ -150,6 +150,13 @@ local ART_BC_BUFFS = {
     -- On-use / Instant (no lasting buff, for bank restock only)
     { key="MAJ_MANA_POT",        name="Major Mana Potion",                buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Potion_76",                 itemKey="MAJ_MANA_POT"      },
     { key="THISTLE_TEA",          name="Thistle Tea",                      buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Drink_Milk_05",             itemKey=nil, classReq="ROGUE", itemIds={7676} },
+    { key="HOLY_WATER",           name="Stratholme Holy Water",            buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Potion_54",                 itemKey=nil, itemIds={13180}   },
+    { key="GOBLIN_SAPPER",        name="Goblin Sapper Charge",             buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\Spell_Fire_SelfDestruct",       itemKey=nil, itemIds={10646}   },
+    { key="DENSE_DYNAMITE",       name="Dense Dynamite",                   buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Misc_Bomb_06",              itemKey=nil, itemIds={18641}   },
+    { key="POT_QUICKNESS",        name="Potion of Quickness",              buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Potion_80",                 itemKey=nil, itemIds={57111}   },
+    { key="JUJU_FLURRY",          name="Juju Flurry",                      buffName="Juju Flurry",                      sec="physical",   icon="Interface\\Icons\\INV_Misc_MonsterScales_17",     itemKey=nil, itemIds={12450}   },
+    -- Caster/Healer drink
+    { key="KREEG_BEATDOWN",       name="Kreeg's Stout Beatdown",           buffName="Stout",                            sec="caster",     icon="Interface\\Icons\\INV_Drink_05",                  itemKey=nil, itemIds={18284}   },
     -- Weapon Buffs
     { key="CONSECR_STONE",       name="Consecrated Sharpening Stone",     buffName="Consecrated Weapon",               sec="weapon",     icon="Interface\\Icons\\INV_Stone_SharpeningStone_02",  itemKey="CONSECR_STONE"     },
     { key="BLESSED_WIZ_OIL",     name="Blessed Wizard Oil",               buffName="Blessed Wizard Oil",               sec="weapon",     icon="Interface\\Icons\\INV_Potion_138",                itemKey="BLESSED_WIZ_OIL"   },
