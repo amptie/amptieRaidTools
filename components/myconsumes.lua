@@ -135,6 +135,16 @@ end
 local mcBagDirty  = true
 local mcBagCache  = {}  -- [buffKey] = count
 
+-- Resolve stack/charge count from GetContainerItemInfo.
+-- Normal items: positive count = stack size.
+-- Charge items (Brilliant Oils): negative count = charges per item; count each item as 1.
+local function MC_ItemCount(cnt)
+    if not cnt then return 1 end
+    if cnt < 0 then return 1 end
+    if cnt == 0 then return 1 end
+    return cnt
+end
+
 -- Resolve item IDs for a buff entry (itemKey path OR direct itemIds)
 local function MC_GetItemIds(bcBuff)
     if bcBuff.itemIds then return bcBuff.itemIds end
@@ -671,16 +681,6 @@ local MC_BANK_BAGS = { -1, 5, 6, 7, 8, 9, 10 }
 local MC_RESTOCK_DELAY = 0.3
 local mcRestockQueue = {}  -- { {bankBag, bankSlot, amount}, ... }
 local mcRestockActive = false
-
--- Resolve stack/charge count from GetContainerItemInfo.
--- Normal items: positive count = stack size.
--- Charge items (Brilliant Oils): negative count = charges per item; count each item as 1.
-local function MC_ItemCount(cnt)
-    if not cnt then return 1 end
-    if cnt < 0 then return 1 end  -- charge-based item: 1 item per slot
-    if cnt == 0 then return 1 end
-    return cnt
-end
 
 -- Count item in inventory bags 0-4
 local function MC_CountInBags(itemIds)
