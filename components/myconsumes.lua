@@ -86,6 +86,7 @@ local function GetMCDB()
     if s.reappearMode == nil then s.reappearMode = "none"   end
     if s.activeMode   == nil then s.activeMode   = "none"   end
     if s.specBinding  == nil then s.specBinding  = false   end
+    if not s.restockList then s.restockList = {} end
     MC_EnsureBuiltinProfiles(s)
     if not s.activeProfile or not s.profiles[s.activeProfile] then
         s.activeProfile = "Default"
@@ -665,6 +666,162 @@ mcSpecBindDoneFrame:SetScript("OnEvent", function()
 end)
 
 -- ============================================================
+-- Bank Restock
+-- ============================================================
+local MC_BANK_BAGS = { -1, 5, 6, 7, 8, 9, 10 }
+local MC_RESTOCK_DELAY = 0.15
+local mcRestockQueue = {}  -- { {bankBag, bankSlot, amount}, ... }
+local mcRestockActive = false
+
+-- Count item in inventory bags 0-4
+local function MC_CountInBags(itemIds)
+    local count = 0
+    local idSet = {}
+    for i = 1, getn(itemIds) do idSet[itemIds[i]] = true end
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local _, _, idStr = sfind(link, "item:(%d+):")
+                if idStr and idSet[tonumber(idStr)] then
+                    local _, cnt = GetContainerItemInfo(bag, slot)
+                    count = count + math.abs(cnt or 1)
+                end
+            end
+        end
+    end
+    return count
+end
+
+-- Find item stacks in bank containers, returns list of {bag, slot, count}
+local function MC_FindInBank(itemIds)
+    local found = {}
+    local idSet = {}
+    for i = 1, getn(itemIds) do idSet[itemIds[i]] = true end
+    for bi = 1, getn(MC_BANK_BAGS) do
+        local bankBag = MC_BANK_BAGS[bi]
+        local slots = GetContainerNumSlots(bankBag)
+        for slot = 1, slots do
+            local link = GetContainerItemLink(bankBag, slot)
+            if link then
+                local _, _, idStr = sfind(link, "item:(%d+):")
+                if idStr and idSet[tonumber(idStr)] then
+                    local _, cnt = GetContainerItemInfo(bankBag, slot)
+                    tinsert(found, { bag = bankBag, slot = slot, count = math.abs(cnt or 1), itemId = tonumber(idStr) })
+                end
+            end
+        end
+    end
+    return found
+end
+
+-- Build restock transfer queue
+local function MC_RestockFromBank()
+    local s = GetMCDB()
+    if not s.restockList or getn(s.restockList) == 0 then return end
+    if not ART_BC_BY_KEY_ALL then return end
+
+    local restocked = {}
+    for k = 1, getn(mcRestockQueue) do mcRestockQueue[k] = nil end
+    mcRestockQueue.n = 0
+
+    for ri = 1, getn(s.restockList) do
+        local entry = s.restockList[ri]
+        local bk = entry.buffKey
+        local wanted = entry.count or 0
+        if wanted <= 0 then wanted = 0 end
+        local bcBuff = ART_BC_BY_KEY_ALL[bk]
+        if bcBuff then
+            local ids = MC_GetItemIds(bcBuff)
+            if ids and getn(ids) > 0 then
+                local have = MC_CountInBags(ids)
+                local need = wanted - have
+                if need > 0 then
+                    local bankStacks = MC_FindInBank(ids)
+                    for si = 1, getn(bankStacks) do
+                        if need <= 0 then break end
+                        local bs = bankStacks[si]
+                        local take = need
+                        if take > bs.count then take = bs.count end
+                        tinsert(mcRestockQueue, { bag = bs.bag, slot = bs.slot, amount = take, full = (take >= bs.count), itemId = bs.itemId })
+                        need = need - take
+                    end
+                    local moved = (wanted - have) - need
+                    if moved > 0 then
+                        tinsert(restocked, (bcBuff.name or bk) .. " x" .. moved)
+                    end
+                end
+            end
+        end
+    end
+
+    if getn(restocked) > 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Restocking: " .. table.concat(restocked, ", "))
+    end
+
+    -- Start processing queue
+    if getn(mcRestockQueue) > 0 then
+        mcRestockActive = true
+    end
+end
+
+-- Throttled queue processor
+local mcRestockTimer = 0
+local mcRestockIdx   = 0
+local mcRestockFrame = CreateFrame("Frame", nil, UIParent)
+mcRestockFrame:SetScript("OnUpdate", function()
+    if not mcRestockActive then return end
+    local dt = arg1 or 0
+    mcRestockTimer = mcRestockTimer + dt
+    if mcRestockTimer < MC_RESTOCK_DELAY then return end
+    mcRestockTimer = 0
+    mcRestockIdx = mcRestockIdx + 1
+    if mcRestockIdx > getn(mcRestockQueue) then
+        mcRestockActive = false
+        mcRestockIdx = 0
+        mcBagDirty = true
+        return
+    end
+    local entry = mcRestockQueue[mcRestockIdx]
+    if entry.full then
+        PickupContainerItem(entry.bag, entry.slot)
+    else
+        SplitContainerItem(entry.bag, entry.slot, entry.amount)
+    end
+    -- Try to merge with existing partial stacks first
+    if CursorHasItem() and entry.itemId then
+        local placed = false
+        for bag = 0, 4 do
+            local slots = GetContainerNumSlots(bag)
+            for slot = 1, slots do
+                local link = GetContainerItemLink(bag, slot)
+                if link then
+                    local _, _, idStr = sfind(link, "item:(%d+):")
+                    if idStr and tonumber(idStr) == entry.itemId then
+                        -- Found a stack of the same item — PickupContainerItem merges
+                        PickupContainerItem(bag, slot)
+                        placed = true
+                        break
+                    end
+                end
+            end
+            if placed then break end
+        end
+    end
+    -- If still on cursor (no partial stack or stack was full), place in any free slot
+    if CursorHasItem() then
+        PutItemInBackpack()
+        if CursorHasItem() then
+            for b = 1, 4 do
+                PutItemInBag(19 + b)
+                if not CursorHasItem() then break end
+            end
+        end
+    end
+end)
+
+-- ============================================================
 -- Events + poll
 -- ============================================================
 local mcPollTimer = 0
@@ -677,6 +834,7 @@ mcEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 mcEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 mcEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 mcEventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+mcEventFrame:RegisterEvent("BANKFRAME_OPENED")
 mcEventFrame:SetScript("OnEvent", function()
     local evt = event
     if evt == "PLAYER_REGEN_DISABLED" then
@@ -686,6 +844,8 @@ mcEventFrame:SetScript("OnEvent", function()
         mcInCombat = false
         MCSetOverlayCombatState(false)
         if mcOverlayFrame and mcOverlayFrame:IsShown() then RefreshMCOverlay() end
+    elseif evt == "BANKFRAME_OPENED" then
+        MC_RestockFromBank()
     elseif evt == "BAG_UPDATE" then
         mcBagDirty = true
     elseif evt == "PLAYER_ENTERING_WORLD" or evt == "ZONE_CHANGED_NEW_AREA" then
@@ -941,6 +1101,311 @@ function AmptieRaidTools_InitMyConsumes(body)
         reapModeBtn.label:SetText(d.reappearMode)
         if mcOverlayFrame and mcOverlayFrame:IsShown() then RefreshMCOverlay() end
     end)
+
+    -- ── Shared category definitions (used by both Restock and Rules dropdowns)
+    local MC_EXCLUDE = {
+        FREE_ACTION=true, RESTORATIVE=true, LTD_INVULN=true, SWIFTNESS=true,
+        GR_STONESHIELD=true, LESSER_INVIS=true, INVISIBILITY=true,
+        MAGIC_RES=true, ELX_POISON_RES=true, INVIS_POTION=true,
+    }
+    local MC_CATEGORIES = {
+        { header="Flasks",         keys={FLASK_TITANS=true, FLASK_SUP_PWR=true, FLASK_DIST_WIS=true, FLASK_CHROM_RES=true} },
+        { header="Zanza",          keys={SPIRIT_ZANZA=true, SHEEN_ZANZA=true, SWIFTNESS_ZANZA=true} },
+        { header="Tank",           keys={ELX_FORTITUDE=true, ELX_SUP_DEFENSE=true, RUMSEY_RUM=true, MEDIVH_MERLOT=true,
+                                         FOOD_HARDENED_MUSH=true, FOOD_CHIMAEROK=true, FOOD_FISHE_CHOC=true,
+                                         FOOD_WILDHAMMER_YAM=true, FOOD_TELABIM_MEDLEY=true, FOOD_SANDSWEPT_SPICY=true,
+                                         FOOD_DEEP_SEA_STEW=true, FOOD_GURUBASHI_GUMBO=true} },
+        { header="Melee",          keys={ELX_MONGOOSE=true, ELX_GIANTS=true, JUJU_POWER=true, WINTERFALL_FW=true,
+                                         JUJU_MIGHT=true, MIGHTY_RAGE=true, ROIDS=true, GROUND_SCORPOK=true,
+                                         FOOD_POWER_MUSH=true, FOOD_DESERT_DUMP=true, FOOD_MIGHTFISH=true,
+                                         FOOD_GRILLED_SQUID=true, FOOD_SOUR_BERRY=true, FOOD_TELABIM_SURP=true,
+                                         FOOD_SANDSWEPT_CRUNCH=true} },
+        { header="Caster / Healer", keys={GR_ARCANE_ELX=true, DREAMSHARD_ELX=true, ELX_GR_FIRE_PWR=true,
+                                          ELX_SHADOW_PWR=true, ELX_GR_NATURE_PWR=true, ELX_GR_ARCANE_PWR=true,
+                                          ELX_GR_FROST_PWR=true, DREAMTONIC=true, MAGEBLOOD=true,
+                                          MEDIVH_MERLOT_BLUE=true,
+                                          FOOD_NIGHTFIN=true, FOOD_SOUR_GRAPES=true, FOOD_TELABIM_DELIGHT=true,
+                                          FOOD_HERBAL_SALAD=true, FOOD_WATERMELON=true, FOOD_RUNN_TUM=true,
+                                          FOOD_HOT_BASS=true} },
+        { header="Hybrid",         keys={CONCOCTION_ARCANE=true, CONCOCTION_EMERALD=true, CONCOCTION_DREAM=true} },
+        { header="Weapon Buffs",   keys={CONSECR_STONE=true, BLESSED_WIZ_OIL=true, ELEM_SHARP_STONE=true,
+                                         BRILL_MANA_OIL=true, BRILL_WIZ_OIL=true} },
+        { header="Shaman Imbues", keys={WPN_FLAMETONGUE=true, WPN_FROSTBRAND=true, WPN_ROCKBITER=true, WPN_WINDFURY=true} },
+        { header="Rogue Poisons", keys={PSN_INSTANT=true, PSN_DEADLY=true, PSN_MINDNUMB=true, PSN_CRIPPLING=true,
+                                        PSN_WOUND=true, PSN_DISSOLVENT=true, PSN_CORROSIVE=true, PSN_AGITATING=true} },
+    }
+    local MC_CAT_ASSIGNED = {}
+    for ci = 1, getn(MC_CATEGORIES) do
+        for k in pairs(MC_CATEGORIES[ci].keys) do MC_CAT_ASSIGNED[k] = true end
+    end
+
+    -- ── Bank Restock ─────────────────────────────────────────
+    local div3 = panel:CreateTexture(nil, "ARTWORK")
+    div3:SetHeight(1)
+    div3:SetPoint("TOPLEFT", reapLbl, "BOTTOMLEFT", 0, -14)
+    div3:SetPoint("RIGHT", panel, "LEFT", 280, 0)
+    div3:SetTexture(0.25, 0.25, 0.28, 0.5)
+
+    local rsHdr = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    rsHdr:SetPoint("TOPLEFT", div3, "BOTTOMLEFT", 0, -6)
+    rsHdr:SetText("Bank Restock")
+    rsHdr:SetTextColor(0.9, 0.75, 0.2, 1)
+
+    local rsDesc = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    rsDesc:SetPoint("TOPLEFT", rsHdr, "BOTTOMLEFT", 0, -2)
+    rsDesc:SetText("Auto-transfer from bank when opening it.")
+    rsDesc:SetTextColor(0.6, 0.6, 0.6, 1)
+
+    -- Scroll area for restock rows
+    local rsSF = CreateFrame("ScrollFrame", nil, panel)
+    rsSF:SetPoint("TOPLEFT", rsDesc, "BOTTOMLEFT", 0, -4)
+    rsSF:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 4)
+    rsSF:SetWidth(268)
+    local rsContent = CreateFrame("Frame", nil, rsSF)
+    rsContent:SetWidth(268); rsContent:SetHeight(1)
+    rsSF:SetScrollChild(rsContent)
+    local rsScrollOff = 0
+    local RS_ROW_H = 24
+    local function SetRSScroll(val)
+        local maxS = math.max(rsContent:GetHeight() - rsSF:GetHeight(), 0)
+        if val < 0 then val = 0 end
+        if val > maxS then val = maxS end
+        rsScrollOff = val
+        rsContent:ClearAllPoints()
+        rsContent:SetPoint("TOPLEFT", rsSF, "TOPLEFT", 0, val)
+    end
+    rsSF:EnableMouseWheel(true)
+    rsSF:SetScript("OnMouseWheel", function()
+        SetRSScroll(rsScrollOff - arg1 * RS_ROW_H * 3)
+    end)
+
+    local rsRows = {}
+    local RefreshRestockList  -- forward decl
+
+    -- Restock dropdown (shared, includes on-use potions)
+    local rsDdFrame = CreateFrame("Frame", "ART_MC_RestockDD", UIParent)
+    if ART_RegisterPopup then ART_RegisterPopup(rsDdFrame) end
+    rsDdFrame:SetFrameStrata("TOOLTIP")
+    rsDdFrame:SetWidth(200)
+    rsDdFrame:SetBackdrop(BD)
+    rsDdFrame:SetBackdropColor(0.08, 0.08, 0.10, 0.98)
+    rsDdFrame:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+    rsDdFrame:Hide()
+    rsDdFrame:EnableMouseWheel(true)
+
+    local RS_DD_MAX = 12
+    local RS_DD_ROW_H = 20
+    local rsDdRows = {}
+    local rsDdScrollOff = 0
+    local rsDdItems = {}
+    local rsDdRowIdx = nil  -- which restock row triggered the dropdown
+
+    local _, rsMyClass = UnitClass("player")
+    rsMyClass = rsMyClass and string.upper(rsMyClass) or ""
+
+    local function RSDDRefresh()
+        for i = 1, getn(rsDdRows) do rsDdRows[i]:Hide() end
+        local vis = getn(rsDdItems) - rsDdScrollOff
+        if vis > RS_DD_MAX then vis = RS_DD_MAX end
+        for i = 1, vis do
+            local item = rsDdItems[i + rsDdScrollOff]
+            local row = rsDdRows[i]
+            if not row then
+                row = CreateFrame("Button", nil, rsDdFrame)
+                row:SetHeight(RS_DD_ROW_H)
+                row:SetBackdrop({ bgFile="Interface\\Tooltips\\UI-Tooltip-Background", tile=true, tileSize=16, edgeSize=0, insets={left=0,right=0,top=0,bottom=0} })
+                row:SetBackdropColor(0, 0, 0, 0)
+                local rfs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                rfs:SetPoint("LEFT", row, "LEFT", 6, 0)
+                row.fs = rfs
+                row:SetScript("OnEnter", function()
+                    if this.isHeader then return end
+                    this:SetBackdropColor(0.22, 0.22, 0.28, 0.9)
+                end)
+                row:SetScript("OnLeave", function() this:SetBackdropColor(0, 0, 0, 0) end)
+                tinsert(rsDdRows, row)
+            end
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", rsDdFrame, "TOPLEFT", 4, -4 - (i-1)*RS_DD_ROW_H)
+            row:SetPoint("RIGHT", rsDdFrame, "RIGHT", -4, 0)
+            row:SetBackdropColor(0, 0, 0, 0)
+            if item.isHeader then
+                row.fs:SetText("|cFFFFCC00" .. item.name .. "|r")
+                row.isHeader = true
+                row:SetScript("OnClick", nil)
+            else
+                row.fs:SetText("  " .. item.name)
+                row.isHeader = false
+                row.buffKey = item.key
+                row:SetScript("OnClick", function()
+                    if this.isHeader then return end
+                    local d = GetMCDB()
+                    tinsert(d.restockList, { buffKey = this.buffKey, count = 5 })
+                    rsDdFrame:Hide()
+                    RefreshRestockList()
+                end)
+            end
+            row:Show()
+        end
+        rsDdFrame:SetHeight(math.min(vis, RS_DD_MAX) * RS_DD_ROW_H + 8)
+    end
+
+    rsDdFrame:SetScript("OnMouseWheel", function()
+        rsDdScrollOff = rsDdScrollOff - arg1
+        if rsDdScrollOff < 0 then rsDdScrollOff = 0 end
+        local maxOff = getn(rsDdItems) - RS_DD_MAX
+        if maxOff < 0 then maxOff = 0 end
+        if rsDdScrollOff > maxOff then rsDdScrollOff = maxOff end
+        RSDDRefresh()
+    end)
+
+    local function RSOpenDropdown(anchorFrame)
+        -- Build categorized list INCLUDING on-use potions
+        for k in pairs(rsDdItems) do rsDdItems[k] = nil end
+        rsDdItems.n = 0
+        if not ART_BC_BUFFS_ALL then return end
+
+        -- Reuse same categories as Rules but no exclusions (on-use included)
+        local RS_CATS = MC_CATEGORIES  -- same categories defined above
+        local RS_CAT_ASSIGNED = MC_CAT_ASSIGNED
+
+        local function rsEligible(b)
+            if b.classReq and b.classReq ~= rsMyClass then return false end
+            return b.itemKey or b.isFood or b.itemIds
+        end
+
+        for ci = 1, getn(RS_CATS) do
+            local cat = RS_CATS[ci]
+            local items = {}
+            for i = 1, getn(ART_BC_BUFFS_ALL) do
+                local b = ART_BC_BUFFS_ALL[i]
+                if rsEligible(b) and cat.keys[b.key] then
+                    tinsert(items, { key = b.key, name = b.name })
+                end
+            end
+            if getn(items) > 0 then
+                tinsert(rsDdItems, { name = cat.header, isHeader = true })
+                for ii = 1, getn(items) do tinsert(rsDdItems, items[ii]) end
+            end
+        end
+        -- Remainder (protection pots, on-use, etc.)
+        local miscItems = {}
+        for i = 1, getn(ART_BC_BUFFS_ALL) do
+            local b = ART_BC_BUFFS_ALL[i]
+            if rsEligible(b) and not RS_CAT_ASSIGNED[b.key] then
+                tinsert(miscItems, { key = b.key, name = b.name })
+            end
+        end
+        if getn(miscItems) > 0 then
+            tinsert(rsDdItems, { name = "Other", isHeader = true })
+            for ii = 1, getn(miscItems) do tinsert(rsDdItems, miscItems[ii]) end
+        end
+
+        rsDdScrollOff = 0
+        RSDDRefresh()
+        rsDdFrame:ClearAllPoints()
+        rsDdFrame:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
+        rsDdFrame:Show()
+    end
+
+    RefreshRestockList = function()
+        local d = GetMCDB()
+        local list = d.restockList
+        for i = 1, getn(rsRows) do rsRows[i]:Hide() end
+        local numEntries = getn(list)
+        for i = 1, numEntries + 1 do
+            local row = rsRows[i]
+            if not row then
+                row = CreateFrame("Frame", nil, rsContent)
+                row:SetHeight(RS_ROW_H); row:SetWidth(268)
+                row:EnableMouse(false)
+                -- Icon
+                local iconTex = row:CreateTexture(nil, "ARTWORK")
+                iconTex:SetWidth(16); iconTex:SetHeight(16)
+                iconTex:SetPoint("LEFT", row, "LEFT", 2, 0)
+                row.iconTex = iconTex
+                -- Name label
+                local nameFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                nameFS:SetPoint("LEFT", iconTex, "RIGHT", 4, 0)
+                nameFS:SetWidth(130); nameFS:SetJustifyH("LEFT")
+                row.nameFS = nameFS
+                -- Count editbox
+                local cntEb = CreateFrame("EditBox", nil, row)
+                cntEb:SetWidth(40); cntEb:SetHeight(18)
+                cntEb:SetPoint("LEFT", nameFS, "RIGHT", 4, 0)
+                cntEb:SetAutoFocus(false); cntEb:SetMaxLetters(4)
+                cntEb:SetFontObject(GameFontHighlightSmall)
+                cntEb:SetTextInsets(4, 4, 0, 0)
+                cntEb:SetBackdrop(BD)
+                cntEb:SetBackdropColor(0.08, 0.08, 0.10, 0.95)
+                cntEb:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+                cntEb:SetScript("OnEscapePressed", function() this:ClearFocus() end)
+                row.cntEb = cntEb
+                -- Add button (for empty row)
+                local addRsBtn = MakeBtn(row, "+", 20, 18)
+                addRsBtn:SetPoint("LEFT", row, "LEFT", 2, 0)
+                addRsBtn:SetFrameLevel(row:GetFrameLevel() + 2)
+                row.addRsBtn = addRsBtn
+                -- Delete button
+                local delR = CreateFrame("Button", nil, row)
+                delR:SetWidth(18); delR:SetHeight(18)
+                delR:SetPoint("LEFT", cntEb, "RIGHT", 4, 0)
+                delR:SetFrameLevel(row:GetFrameLevel() + 2)
+                local delFS = delR:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                delFS:SetAllPoints(delR); delFS:SetJustifyH("CENTER")
+                delFS:SetText("|cFFFF4444X|r")
+                delR:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
+                row.delBtn = delR
+                tinsert(rsRows, row)
+            end
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", rsContent, "TOPLEFT", 0, -(i-1) * RS_ROW_H)
+            row:SetPoint("RIGHT", rsContent, "RIGHT", 0, 0)
+
+            if i <= numEntries then
+                -- Filled row
+                local entry = list[i]
+                local bcBuff = ART_BC_BY_KEY_ALL and ART_BC_BY_KEY_ALL[entry.buffKey]
+                row.iconTex:SetTexture(bcBuff and bcBuff.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                row.iconTex:Show()
+                row.nameFS:SetText(bcBuff and bcBuff.name or entry.buffKey)
+                row.nameFS:Show()
+                row.cntEb:SetText(tostring(entry.count or 5))
+                row.cntEb:Show()
+                local captIdx = i
+                row.cntEb:SetScript("OnEnterPressed", function()
+                    local d2 = GetMCDB()
+                    local v = tonumber(this:GetText()) or 0
+                    if d2.restockList[captIdx] then d2.restockList[captIdx].count = v end
+                    this:ClearFocus()
+                end)
+                row.cntEb:SetScript("OnEditFocusLost", function()
+                    local d2 = GetMCDB()
+                    local v = tonumber(this:GetText()) or 0
+                    if d2.restockList[captIdx] then d2.restockList[captIdx].count = v end
+                end)
+                row.delBtn:SetScript("OnClick", function()
+                    local d2 = GetMCDB()
+                    table.remove(d2.restockList, captIdx)
+                    RefreshRestockList()
+                end)
+                row.delBtn:Show()
+                row.addRsBtn:Hide()
+            else
+                -- Empty row: add button
+                row.iconTex:Hide()
+                row.nameFS:Hide()
+                row.cntEb:Hide()
+                row.delBtn:Hide()
+                row.addRsBtn:Show()
+                row.addRsBtn:SetScript("OnClick", function()
+                    RSOpenDropdown(this)
+                end)
+            end
+            row:Show()
+        end
+        rsContent:SetHeight(math.max((numEntries + 1) * RS_ROW_H, 1))
+    end
 
     -- ── Rules panel (right side) ─────────────────────────────
     local LEFT_W = 290
@@ -1444,44 +1909,6 @@ function AmptieRaidTools_InitMyConsumes(body)
         DDRefresh()
     end)
 
-    -- Category mapping for dropdown sorting
-    local MC_EXCLUDE = {
-        FREE_ACTION=true, RESTORATIVE=true, LTD_INVULN=true, SWIFTNESS=true,
-        GR_STONESHIELD=true, LESSER_INVIS=true, INVISIBILITY=true,
-        MAGIC_RES=true, ELX_POISON_RES=true, INVIS_POTION=true,
-    }
-    local MC_CATEGORIES = {
-        { header="Flasks",         keys={FLASK_TITANS=true, FLASK_SUP_PWR=true, FLASK_DIST_WIS=true, FLASK_CHROM_RES=true} },
-        { header="Zanza",          keys={SPIRIT_ZANZA=true, SHEEN_ZANZA=true, SWIFTNESS_ZANZA=true} },
-        { header="Tank",           keys={ELX_FORTITUDE=true, ELX_SUP_DEFENSE=true, RUMSEY_RUM=true, MEDIVH_MERLOT=true,
-                                         FOOD_HARDENED_MUSH=true, FOOD_CHIMAEROK=true, FOOD_FISHE_CHOC=true,
-                                         FOOD_WILDHAMMER_YAM=true, FOOD_TELABIM_MEDLEY=true, FOOD_SANDSWEPT_SPICY=true,
-                                         FOOD_DEEP_SEA_STEW=true, FOOD_GURUBASHI_GUMBO=true} },
-        { header="Melee",          keys={ELX_MONGOOSE=true, ELX_GIANTS=true, JUJU_POWER=true, WINTERFALL_FW=true,
-                                         JUJU_MIGHT=true, MIGHTY_RAGE=true, ROIDS=true, GROUND_SCORPOK=true,
-                                         FOOD_POWER_MUSH=true, FOOD_DESERT_DUMP=true, FOOD_MIGHTFISH=true,
-                                         FOOD_GRILLED_SQUID=true, FOOD_SOUR_BERRY=true, FOOD_TELABIM_SURP=true,
-                                         FOOD_SANDSWEPT_CRUNCH=true} },
-        { header="Caster / Healer", keys={GR_ARCANE_ELX=true, DREAMSHARD_ELX=true, ELX_GR_FIRE_PWR=true,
-                                          ELX_SHADOW_PWR=true, ELX_GR_NATURE_PWR=true, ELX_GR_ARCANE_PWR=true,
-                                          ELX_GR_FROST_PWR=true, DREAMTONIC=true, MAGEBLOOD=true,
-                                          MEDIVH_MERLOT_BLUE=true,
-                                          FOOD_NIGHTFIN=true, FOOD_SOUR_GRAPES=true, FOOD_TELABIM_DELIGHT=true,
-                                          FOOD_HERBAL_SALAD=true, FOOD_WATERMELON=true, FOOD_RUNN_TUM=true,
-                                          FOOD_HOT_BASS=true} },
-        { header="Hybrid",         keys={CONCOCTION_ARCANE=true, CONCOCTION_EMERALD=true, CONCOCTION_DREAM=true} },
-        { header="Weapon Buffs",   keys={CONSECR_STONE=true, BLESSED_WIZ_OIL=true, ELEM_SHARP_STONE=true,
-                                         BRILL_MANA_OIL=true, BRILL_WIZ_OIL=true} },
-        { header="Shaman Imbues", keys={WPN_FLAMETONGUE=true, WPN_FROSTBRAND=true, WPN_ROCKBITER=true, WPN_WINDFURY=true} },
-        { header="Rogue Poisons", keys={PSN_INSTANT=true, PSN_DEADLY=true, PSN_MINDNUMB=true, PSN_CRIPPLING=true,
-                                        PSN_WOUND=true, PSN_DISSOLVENT=true, PSN_CORROSIVE=true, PSN_AGITATING=true} },
-    }
-    -- Keys assigned to a category
-    local MC_CAT_ASSIGNED = {}
-    for ci = 1, getn(MC_CATEGORIES) do
-        for k in pairs(MC_CATEGORIES[ci].keys) do MC_CAT_ASSIGNED[k] = true end
-    end
-
     addBtn:SetScript("OnClick", function()
         if ddFrame:IsShown() then ddFrame:Hide(); return end
         for k in pairs(ddAllItems) do ddAllItems[k] = nil end
@@ -1549,6 +1976,7 @@ function AmptieRaidTools_InitMyConsumes(body)
         UpdateShowBtn()
         UpdateLockBtn()
         RefreshRuleList()
+        RefreshRestockList()
     end)
 
     AmptieRaidTools_RegisterComponent("myconsumes", panel)

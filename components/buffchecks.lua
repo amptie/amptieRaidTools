@@ -147,6 +147,9 @@ local ART_BC_BUFFS = {
     { key="SHEEN_ZANZA",         name="Sheen of Zanza",                   buffName="Sheen of Zanza",                   sec="utility",    icon="Interface\\Icons\\INV_Potion_29",                 itemKey="SHEEN_ZANZA"       },
     { key="SWIFTNESS_ZANZA",     name="Swiftness of Zanza",               buffName="Swiftness of Zanza",               sec="utility",    icon="Interface\\Icons\\INV_Potion_31",                 itemKey="SWIFTNESS_ZANZA"   },
     { key="ELX_POISON_RES",      name="Elixir of Poison Resistance",      buffName="Cure Poison",                      sec="utility",    icon="Interface\\Icons\\INV_Potion_12",                 itemKey="ELX_POISON_RES"    },
+    -- On-use / Instant (no lasting buff, for bank restock only)
+    { key="MAJ_MANA_POT",        name="Major Mana Potion",                buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Potion_76",                 itemKey="MAJ_MANA_POT"      },
+    { key="THISTLE_TEA",          name="Thistle Tea",                      buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Drink_Milk_05",             itemKey=nil, classReq="ROGUE", itemIds={7676} },
     -- Weapon Buffs
     { key="CONSECR_STONE",       name="Consecrated Sharpening Stone",     buffName="Consecrated Weapon",               sec="weapon",     icon="Interface\\Icons\\INV_Stone_SharpeningStone_02",  itemKey="CONSECR_STONE"     },
     { key="BLESSED_WIZ_OIL",     name="Blessed Wizard Oil",               buffName="Blessed Wizard Oil",               sec="weapon",     icon="Interface\\Icons\\INV_Potion_138",                itemKey="BLESSED_WIZ_OIL"   },
