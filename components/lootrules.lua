@@ -71,20 +71,12 @@ local QUALITY_COLORS = {
 -- zones = extra zone names beyond the primary "zone" field (e.g. multi-wing instances)
 -- minRaid/maxRaid = raid size guards (for distinguishing 10- vs 40-man variants)
 -- ============================================================
-local ART_LR_ZONES = {
-    { key="mc",      label="Molten Core",         zone="Molten Core"                                                                             },
-    { key="ony",     label="Onyxia's Lair",        zone="Onyxia's Lair"                                                                          },
-    { key="bwl",     label="Blackwing Lair",       zone="Blackwing Lair"                                                                         },
-    { key="zg",      label="Zul'Gurub",            zone="Zul'Gurub"                                                                              },
-    { key="tmh",     label="Timbermaw Hold",       zone="Timbermaw Hold"                                                                         },
-    { key="aq20",    label="Ruins of AQ",          zone="Ruins of Ahn'Qiraj"                                                                     },
-    { key="aq40",    label="Temple of AQ",         zone="Temple of Ahn'Qiraj",  zones={"Ahn'Qiraj"}                                          },
-    { key="naxx",    label="Naxxramas",            zone="Naxxramas",            zones={"The Upper Necropolis"}                                    },
-    { key="esanc",   label="Emerald Sanctum",      zone="Emerald Sanctum"                                                                        },
-    { key="kara10",  label="Karazhan (10-man)",    zone="The Tower of Karazhan", zones={"Tower of Karazhan", "The Rock of Desolation"}, maxRaid=14 },
-    { key="kara40",  label="Karazhan (40-man)",    zone="The Tower of Karazhan", zones={"Tower of Karazhan", "The Rock of Desolation"}, minRaid=15 },
-    { key="outraid", label="Out of Raid",          zone=nil                                                                                       },
-}
+-- Use global ART_ZONES + "outraid" for loot rules
+local ART_LR_ZONES = {}
+if ART_ZONES then
+    for i = 1, getn(ART_ZONES) do ART_LR_ZONES[i] = ART_ZONES[i] end
+end
+tinsert(ART_LR_ZONES, { key="outraid", label="Out of Raid", zone=nil })
 
 local function GetCurrentLRZoneKey()
     local n = GetNumRaidMembers() or 0

@@ -12,7 +12,6 @@ local QOL_DEFAULTS = {
     GINV         = false,  -- Accept invites from guild mates
     FINV         = false,  -- Accept invites from friends
     SINV         = false,  -- Accept invites from strangers
-    DINV         = false,  -- Accept invites when idle in BG or queue
     EBG          = false,  -- Auto enter battleground
     LBG          = false,  -- Auto leave battleground when battle ends
     QBG          = false,  -- Re-queue after leaving BG
@@ -225,6 +224,75 @@ local function QoL_CancelDruidForm()
         end
     end
 end
+
+-- ============================================================
+-- Auto-Stance: on error, switch stance / toggle form off
+-- ============================================================
+-- Find current druid form name (for toggle-off via CastSpellByName)
+local function QoL_GetCurrentFormName()
+    for i = 0, 39 do
+        local buffIdx = GetPlayerBuff(i, "HELPFUL")
+        if buffIdx < 0 then break end
+        if QOL_HAS_SUPERWOW then
+            local _, _, spellId = UnitBuff("player", i + 1)
+            if spellId and spellId > 0 then
+                local sname = SpellInfo(spellId)
+                if sname and ART_QOL_DRUID_FORM_NAMES[sname] then
+                    return sname
+                end
+            end
+        end
+        qolTipFrame:SetOwner(UIParent, "ANCHOR_NONE")
+        qolTipFrame:SetPlayerBuff(buffIdx)
+        local txt = ART_QoL_TipTextLeft1 and ART_QoL_TipTextLeft1:GetText()
+        if txt and ART_QOL_DRUID_FORM_NAMES[txt] then
+            return txt
+        end
+    end
+    return nil
+end
+
+local function art_strsplit(delimiter, subject)
+    local fields = {}
+    local pattern = string.format("([^%s]+)", delimiter)
+    string.gsub(subject, pattern, function(c) fields[table.getn(fields)+1] = c end)
+    return unpack(fields)
+end
+
+local art_stance_scanStr = string.gsub(SPELL_FAILED_ONLY_SHAPESHIFT, "%%s", "(.+)")
+
+-- Dedicated error listener frame
+local art_stance_frame = CreateFrame("Frame")
+art_stance_frame:RegisterEvent("UI_ERROR_MESSAGE")
+art_stance_frame:SetScript("OnEvent", function()
+    local a1 = arg1
+    if not a1 then return end
+    if not amptieRaidToolsDB or not amptieRaidToolsDB.qolSettings then return end
+    if not amptieRaidToolsDB.qolSettings.AUTOSTANCE then return end
+
+    -- Warrior/Paladin: "Can only be used in Battle Stance, ..."
+    for stances in string.gfind(a1, art_stance_scanStr) do
+        for _, stance in pairs({ art_strsplit(",", stances) }) do
+            CastSpellByName(string.gsub(stance, "^%s*(.-)%s*$", "%1"))
+        end
+        return
+    end
+
+    -- Druid: shapeshift errors → cast current form again to toggle it off
+    local isLeaveForm = (QOL_LEAVE_FORM_ERRORS and QOL_LEAVE_FORM_ERRORS[a1])
+        or strfind(a1, "shapeshift")
+        or strfind(a1, "shapeshifted")
+        or strfind(a1, "Shapeshift")
+    if isLeaveForm then
+        if strfind(a1, "interact") and UnitAffectingCombat("player") then return end
+        local formName = QoL_GetCurrentFormName()
+        if formName then
+            CastSpellByName(formName)
+        else
+            QoL_CancelDruidForm()
+        end
+    end
+end)
 
 -- ============================================================
 -- World Chat Mute
@@ -815,9 +883,7 @@ qolEventFrame:SetScript("OnEvent", function()
         local fromWho = (db.GINV and isGuild)
                      or (db.FINV and isFriend)
                      or (db.SINV and not isGuild and not isFriend)
-        -- DINV: accept from anyone, but only when not in instance/BG/queue
-        local idleAccept = db.DINV and not IsInInstance() and not QoL_IsInBGOrQueue()
-        if fromWho or idleAccept then
+        if fromWho then
             AcceptGroup()
             StaticPopup_Hide("PARTY_INVITE")
         end
@@ -891,32 +957,20 @@ qolEventFrame:SetScript("OnEvent", function()
         QoL_ZoneCheck()
 
     elseif evt == "SPELL_FAILED_ONLY_SHAPESHIFT" then
-        -- pfUI: dismount fires independently, auto-stance fires independently
+        -- pfUI: dismount fires independently
         if QDB("DISMOUNT") then QoL_Dismount() end
-        -- (client will cast the correct stance when AUTOSTANCE is on — no extra action needed)
 
     elseif evt == "UI_ERROR_MESSAGE" then
         -- Auto-dismount: fire on all pfUI-style mount/shapeshift error messages
         if QDB("DISMOUNT") and a1 then
             for _, errStr in pairs(QOL_DISMOUNT_ERRORS) do
                 if a1 == errStr then
-                    -- don't cancel form when clicking NPCs in combat (pfUI behaviour)
                     if a1 == ERR_CANT_INTERACT_SHAPESHIFTED and UnitAffectingCombat("player") then
                         break
                     end
                     QoL_Dismount()
                     break
                 end
-            end
-        end
-        -- Auto-stance: cancel druid form only when the error specifically means
-        -- "you must leave your current form" — NOT for errors like SPELL_NOT_SHAPESHIFTED
-        -- which mean "you need TO BE shapeshifted" (e.g. Moonkin casting Balance spells).
-        if QDB("AUTOSTANCE") and a1 and QOL_LEAVE_FORM_ERRORS[a1] then
-            if a1 == ERR_CANT_INTERACT_SHAPESHIFTED and UnitAffectingCombat("player") then
-                -- don't cancel form when clicking NPCs in combat (same guard as dismount)
-            else
-                QoL_CancelDruidForm()
             end
         end
     end
@@ -1013,15 +1067,8 @@ function AmptieRaidTools_InitQoLSettings(body)
     SetCbTooltip(cbSinv, "Strangers",
         "Automatically accept group invitations\nfrom anyone (including strangers).")
 
-    local cbDinv = ART_CreateCheckbox(panel, "Idle (not in instance / in queue)")
-    cbDinv:SetPoint("TOPLEFT", cbSinv, "BOTTOMLEFT", 0, ROW_H)
-    cbDinv:SetChecked(db.DINV)
-    cbDinv.userOnClick = function() GetQolDB().DINV = cbDinv:GetChecked() end
-    SetCbTooltip(cbDinv, "Idle Accept",
-        "Automatically accept invitations when you are\nnot in an instance or are in a BG queue.")
-
     -- Section: BG Automation
-    local hdrBG = MakeSectionHeader(panel, "Battleground Automation", cbDinv, -10)
+    local hdrBG = MakeSectionHeader(panel, "Battleground Automation", cbSinv, -10)
 
     local cbEbg = ART_CreateCheckbox(panel, "Enter Battleground")
     cbEbg:SetPoint("TOPLEFT", hdrBG, "BOTTOMLEFT", 0, -4)
@@ -1183,3 +1230,4 @@ function AmptieRaidTools_InitQoLSettings(body)
     SetCbTooltip(cbQuest, "Quest Repeat (CTRL)",
         "Hold CTRL to automatically accept, complete,\nand repeat quests through all quest dialogs.\nUseful for turn-in grinding and repeatable quests.")
 end
+

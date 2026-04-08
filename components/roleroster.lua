@@ -12,10 +12,14 @@ local ROLE_BADGE  = { Tank="T", Healer="H", Melee="M", Caster="C" }
 local ROLE_ORDER  = { Tank=1, Healer=2, Melee=3, Caster=4 }
 local FILTER_OPTIONS = { "All", "Tank", "Healer", "Melee", "Caster" }
 
+-- Own addon version (from TOC)
+local OWN_VERSION = GetAddOnMetadata("amptieRaidTools", "Version") or "0"
+
 -- session data
 local rosterSpecs    = {}   -- playerName -> spec string
 local rosterAltSpecs = {}   -- playerName -> {Tank="MC", PhysDPS="BWL", ...}
 local rosterClasses  = {}   -- playerName -> uppercase class (e.g. "WARRIOR")
+local rosterVersions = {}   -- playerName -> version string (from addon message)
 local rlFilter       = "All"
 local rlPanel        = nil
 
@@ -36,6 +40,25 @@ local ALT_ROLE_BROAD = {
 -- ============================================================
 -- Helpers
 -- ============================================================
+
+-- Compare two version strings "major.minor" — returns true if v >= ref
+local function VersionAtLeast(v, ref)
+    if not v or not ref then return false end
+    -- Parse "1.2" → major=1, minor=2; handles single number "1" → minor=0
+    local function parse(s)
+        local dot = strfind(s, ".", 1, true)
+        if dot then
+            return tonumber(string.sub(s, 1, dot - 1)) or 0,
+                   tonumber(string.sub(s, dot + 1)) or 0
+        end
+        return tonumber(s) or 0, 0
+    end
+    local vMaj, vMin = parse(v)
+    local rMaj, rMin = parse(ref)
+    if vMaj ~= rMaj then return vMaj > rMaj end
+    return vMin >= rMin
+end
+
 local function GetMsgChannel()
     if GetNumRaidMembers() > 0 then return "RAID" end
     if GetNumPartyMembers() > 0 then return "PARTY" end
@@ -69,7 +92,8 @@ function ART_RL_OnOwnSpecChanged(spec)
     local classUpper = cl and string.upper(cl) or "UNKNOWN"
     local altStr = BuildAltStr()
     local msg = "S^" .. classUpper .. "^" .. spec
-    if altStr ~= "" then msg = msg .. "^" .. altStr end
+    if altStr ~= "" then msg = msg .. "^" .. altStr else msg = msg .. "^" end
+    msg = msg .. "^" .. OWN_VERSION
     SendAddonMessage(ROLE_PREFIX, msg, ch)
 end
 
@@ -161,12 +185,17 @@ rlEventFrame:SetScript("OnEvent", function()
                     if not sep2 then return end
                     local classUpper = string.sub(val, 1, sep2 - 1)
                     local rest       = string.sub(val, sep2 + 1)
-                    -- rest: "spec" or "spec^Tank:MC;PhysDPS:BWL"
+                    -- rest: "spec" or "spec^altStr^version"
                     local sep3   = strfind(rest, "^", 1, true)
                     local spec   = sep3 and string.sub(rest, 1, sep3 - 1) or rest
-                    local altStr = sep3 and string.sub(rest, sep3 + 1) or ""
+                    local rest2  = sep3 and string.sub(rest, sep3 + 1) or ""
+                    -- rest2: "altStr^version" or "altStr" or ""
+                    local sep4    = strfind(rest2, "^", 1, true)
+                    local altStr  = sep4 and string.sub(rest2, 1, sep4 - 1) or rest2
+                    local verStr  = sep4 and string.sub(rest2, sep4 + 1) or nil
                     rosterSpecs[nameOnly]   = spec
                     rosterClasses[nameOnly] = classUpper
+                    if verStr and verStr ~= "" then rosterVersions[nameOnly] = verStr end
                     -- Parse alt specs
                     local alts = {}
                     if altStr ~= "" then
@@ -222,6 +251,7 @@ rlEventFrame:SetScript("OnEvent", function()
                 rosterSpecs[name]    = nil
                 rosterAltSpecs[name] = nil
                 rosterClasses[name]  = nil
+                rosterVersions[name] = nil
             end
         end
         -- Ensure self is present
@@ -783,7 +813,31 @@ function AmptieRaidTools_InitRoleRoster(body)
             local subrole = ART_GetSpecSubRole and ART_GetSpecSubRole(spec) or nil
             if rlFilter == "All" or role == rlFilter then
                 local ord = (role and ROLE_ORDER[role]) or 5
-                tinsert(rows, { name=name, spec=spec, role=role, subrole=subrole, ord=ord })
+                tinsert(rows, { name=name, spec=spec, role=role, subrole=subrole, ord=ord, hasAddon=true })
+            end
+        end
+        -- Add raid members without the addon (only in "All" filter)
+        if rlFilter == "All" then
+            local numRaid  = GetNumRaidMembers()
+            local numParty = GetNumPartyMembers()
+            if numRaid > 0 then
+                for i = 1, numRaid do
+                    local rname = UnitName("raid"..i)
+                    if rname and not rosterSpecs[rname] then
+                        local _, cl = UnitClass("raid"..i)
+                        if cl then rosterClasses[rname] = string.upper(cl) end
+                        tinsert(rows, { name=rname, spec=nil, role=nil, subrole=nil, ord=10, hasAddon=false })
+                    end
+                end
+            elseif numParty > 0 then
+                for i = 1, numParty do
+                    local rname = UnitName("party"..i)
+                    if rname and not rosterSpecs[rname] then
+                        local _, cl = UnitClass("party"..i)
+                        if cl then rosterClasses[rname] = string.upper(cl) end
+                        tinsert(rows, { name=rname, spec=nil, role=nil, subrole=nil, ord=10, hasAddon=false })
+                    end
+                end
             end
         end
         local n = getn(rows)
@@ -804,76 +858,100 @@ function AmptieRaidTools_InitRoleRoster(body)
             local row  = listRows[i]
             local data = rows[i]
             if data then
-                local role  = data.role
-                local badge = (role and ROLE_BADGE[role]) or "?"
-                local rc    = ART_ROLE_COLORS and role and ART_ROLE_COLORS[role]
-                if rc then
-                    row.badge:SetTextColor(rc.r, rc.g, rc.b, 1)
-                    row.roleFs:SetTextColor(rc.r, rc.g, rc.b, 1)
-                else
-                    row.badge:SetTextColor(0.55, 0.55, 0.55, 1)
-                    row.roleFs:SetTextColor(0.55, 0.55, 0.55, 1)
-                end
-                row.badge:SetText(badge)
-                local cc = RAID_CLASS_COLORS and rosterClasses[data.name] and RAID_CLASS_COLORS[rosterClasses[data.name]]
-                if cc then
-                    row.playerName:SetTextColor(cc.r, cc.g, cc.b, 1)
-                else
-                    row.playerName:SetTextColor(0.85, 0.85, 0.85, 1)
-                end
-                row.playerName:SetText(data.name)
-                row.roleFs:SetText(role or "?")
-                row.specFs:SetText(data.spec or "")
-
-                -- Alt spec icons
-                local alts = rosterAltSpecs[data.name] or {}
-                local altCount = 0
-                -- Reset all
-                for ai = 1, 3 do row.altIcons[ai]:Hide() end
-                -- Fill in order: Tank, PhysDPS, Caster, Healer
-                local ALT_ORDER = { "Tank", "PhysDPS", "Caster", "Healer" }
-                for aoi = 1, 4 do
-                    local rk   = ALT_ORDER[aoi]
-                    local tier = alts[rk]
-                    if tier and ALT_ROLE_BROAD[rk] ~= role then
-                        altCount = altCount + 1
-                        if altCount <= 3 then
-                            local af = row.altIcons[altCount]
-                            af.tex:SetTexture(ALT_ROLE_ICONS[rk])
-                            af.lbl:SetText(tier)
-                            af:Show()
-                        end
+                if data.hasAddon then
+                    local role  = data.role
+                    local badge = (role and ROLE_BADGE[role]) or "?"
+                    local rc    = ART_ROLE_COLORS and role and ART_ROLE_COLORS[role]
+                    if rc then
+                        row.badge:SetTextColor(rc.r, rc.g, rc.b, 1)
+                        row.roleFs:SetTextColor(rc.r, rc.g, rc.b, 1)
+                    else
+                        row.badge:SetTextColor(0.55, 0.55, 0.55, 1)
+                        row.roleFs:SetTextColor(0.55, 0.55, 0.55, 1)
                     end
-                end
+                    row.badge:SetText(badge)
+                    local cc = RAID_CLASS_COLORS and rosterClasses[data.name] and RAID_CLASS_COLORS[rosterClasses[data.name]]
+                    if cc then
+                        row.playerName:SetTextColor(cc.r, cc.g, cc.b, 1)
+                    else
+                        row.playerName:SetTextColor(0.85, 0.85, 0.85, 1)
+                    end
+                    -- Name with version
+                    local nameStr = data.name
+                    local ver = rosterVersions[data.name]
+                    if ver then
+                        local col = VersionAtLeast(ver, OWN_VERSION) and "|cFF00FF00" or "|cFFFF4444"
+                        nameStr = nameStr .. " " .. col .. "(" .. ver .. ")|r"
+                    end
+                    row.playerName:SetText(nameStr)
+                    row.roleFs:SetText(role or "?")
+                    row.specFs:SetText(data.spec or "")
 
-                -- Item Check icons / OK label
-                local icResults = ART_IC_GetCheckResults and ART_IC_GetCheckResults() or {}
-                local icResult  = icResults[data.name]
-                for ji = 1, 8 do row.icIcons[ji]:Hide() end
-                row.icOkLabel:Hide()
-                if icResult and icResult.done then
-                    local missing  = icResult.missing or {}
-                    local icCount  = 0
-                    local hasMiss  = false
-                    for key, have in pairs(missing) do
-                        hasMiss  = true
-                        icCount  = icCount + 1
-                        if icCount <= 8 then
-                            local jf = row.icIcons[icCount]
-                            local iName, iIcon
-                            if ART_IC_GetItemDisplayInfo then
-                                iName, iIcon = ART_IC_GetItemDisplayInfo(key)
+                    -- Alt spec icons
+                    local alts = rosterAltSpecs[data.name] or {}
+                    local altCount = 0
+                    for ai = 1, 3 do row.altIcons[ai]:Hide() end
+                    local ALT_ORDER = { "Tank", "PhysDPS", "Caster", "Healer" }
+                    for aoi = 1, 4 do
+                        local rk   = ALT_ORDER[aoi]
+                        local tier = alts[rk]
+                        if tier and ALT_ROLE_BROAD[rk] ~= role then
+                            altCount = altCount + 1
+                            if altCount <= 3 then
+                                local af = row.altIcons[altCount]
+                                af.tex:SetTexture(ALT_ROLE_ICONS[rk])
+                                af.lbl:SetText(tier)
+                                af:Show()
                             end
-                            jf.itemKey   = key
-                            jf.haveCount = have
-                            jf.itemName  = iName or key
-                            jf.tex:SetTexture(iIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
-                            jf:Show()
                         end
                     end
-                    if not hasMiss then
-                        row.icOkLabel:Show()
+
+                    -- Item Check icons / OK label
+                    local icResults = ART_IC_GetCheckResults and ART_IC_GetCheckResults() or {}
+                    local icResult  = icResults[data.name]
+                    for ji = 1, 8 do row.icIcons[ji]:Hide() end
+                    row.icOkLabel:Hide()
+                    if icResult and icResult.done then
+                        local missing  = icResult.missing or {}
+                        local icCount  = 0
+                        local hasMiss  = false
+                        for key, have in pairs(missing) do
+                            hasMiss  = true
+                            icCount  = icCount + 1
+                            if icCount <= 8 then
+                                local jf = row.icIcons[icCount]
+                                local iName, iIcon
+                                if ART_IC_GetItemDisplayInfo then
+                                    iName, iIcon = ART_IC_GetItemDisplayInfo(key)
+                                end
+                                jf.itemKey   = key
+                                jf.haveCount = have
+                                jf.itemName  = iName or key
+                                jf.tex:SetTexture(iIcon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                                jf:Show()
+                            end
+                        end
+                        if not hasMiss then
+                            row.icOkLabel:Show()
+                        end
                     end
+                else
+                    -- Non-addon player
+                    row.badge:SetText("-")
+                    row.badge:SetTextColor(0.40, 0.40, 0.40, 1)
+                    local cc = RAID_CLASS_COLORS and rosterClasses[data.name] and RAID_CLASS_COLORS[rosterClasses[data.name]]
+                    if cc then
+                        row.playerName:SetTextColor(cc.r, cc.g, cc.b, 1)
+                    else
+                        row.playerName:SetTextColor(0.85, 0.85, 0.85, 1)
+                    end
+                    row.playerName:SetText(data.name)
+                    row.roleFs:SetText("|cFF666666not installed|r")
+                    row.roleFs:SetTextColor(0.40, 0.40, 0.40, 1)
+                    row.specFs:SetText("")
+                    for ai = 1, 3 do row.altIcons[ai]:Hide() end
+                    for ji = 1, 8 do row.icIcons[ji]:Hide() end
+                    row.icOkLabel:Hide()
                 end
 
                 row:Show()
@@ -906,5 +984,6 @@ function AmptieRaidTools_InitRoleRoster(body)
         end
         local _, cl = UnitClass("player")
         if cl then rosterClasses[me] = string.upper(cl) end
+        rosterVersions[me] = OWN_VERSION
     end
 end

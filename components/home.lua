@@ -525,6 +525,7 @@ function AmptieRaidTools_InitHome(body)
 		if ART_AB_OnSpecChanged  then ART_AB_OnSpecChanged(spec)  end
 		if ART_BP_OnSpecChanged  then ART_BP_OnSpecChanged(spec)  end
 		if ART_RL_OnOwnSpecChanged then ART_RL_OnOwnSpecChanged(spec) end
+		if ART_MC_OnSpecChanged  then ART_MC_OnSpecChanged(spec)  end
 	end
 
 	local function RefreshAll()
@@ -603,6 +604,7 @@ function AmptieRaidTools_InitHome(body)
 		btn:SetScript("OnClick", function()
 			ART_SalvationOverride = this.salvKey
 			RefreshSalvButtons()
+			if ART_CB_OnAutoRemoveChanged then ART_CB_OnAutoRemoveChanged() end
 		end)
 		tinsert(salvBtns, btn)
 		prevSalvBtn = btn
@@ -615,6 +617,7 @@ function AmptieRaidTools_InitHome(body)
 	ART_SetSalvationOverride = function(key)
 		ART_SalvationOverride = key
 		RefreshSalvButtons()
+		if ART_CB_OnAutoRemoveChanged then ART_CB_OnAutoRemoveChanged() end
 	end
 
 	-- ── Separator before Alternative Specs ──────────────────

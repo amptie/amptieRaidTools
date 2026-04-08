@@ -7,6 +7,62 @@ local floor   = math.floor
 amptieRaidToolsDB = amptieRaidToolsDB or {}
 local DB = amptieRaidToolsDB
 
+-- ============================================================
+-- Global zone definitions (shared across all components)
+-- ============================================================
+ART_ZONES = {
+    { key="mc",      label="Molten Core",        zone="Molten Core" },
+    { key="ony",     label="Onyxia's Lair",      zone="Onyxia's Lair" },
+    { key="bwl",     label="Blackwing Lair",      zone="Blackwing Lair" },
+    { key="zg",      label="Zul'Gurub",           zone="Zul'Gurub" },
+    { key="tmh",     label="Timbermaw Hold",      zone="Timbermaw Hold" },
+    { key="aq20",    label="Ruins of AQ",         zone="Ruins of Ahn'Qiraj" },
+    { key="aq40",    label="Temple of AQ",        zone="Temple of Ahn'Qiraj", zones={"Ahn'Qiraj"} },
+    { key="naxx",    label="Naxxramas",           zone="Naxxramas", zones={"The Upper Necropolis"} },
+    { key="esanc",   label="Emerald Sanctum",     zone="Emerald Sanctum" },
+    { key="kara10",  label="Karazhan (10-man)",   zone="The Tower of Karazhan", zones={"Tower of Karazhan","The Rock of Desolation"}, maxRaid=14 },
+    { key="kara40",  label="Karazhan (40-man)",   zone="The Tower of Karazhan", zones={"Tower of Karazhan","The Rock of Desolation"}, minRaid=15 },
+}
+
+ART_PVP_ZONES = {
+    ["Arathi Basin"]           = true,
+    ["Warsong Gulch"]          = true,
+    ["Alterac Valley"]         = true,
+    ["Thorn Gorge"]            = true,
+    ["Bloodring Arena"]        = true,
+}
+
+-- Returns the zone key for the player's current location
+-- "mc", "ony", ..., "dungeon", "pvp", "world"
+function ART_GetCurrentZoneKey()
+    local zone = GetRealZoneText()
+    local n    = GetNumRaidMembers() or 0
+    -- Check known raid zones
+    if zone then
+        for i = 1, getn(ART_ZONES) do
+            local z = ART_ZONES[i]
+            if z.zone then
+                local match = (z.zone == zone)
+                if not match and z.zones then
+                    for j = 1, getn(z.zones) do
+                        if z.zones[j] == zone then match = true; break end
+                    end
+                end
+                if match then
+                    if (not z.minRaid or n >= z.minRaid) and (not z.maxRaid or n <= z.maxRaid) then
+                        return z.key
+                    end
+                end
+            end
+        end
+    end
+    -- Check PvP battlegrounds
+    if zone and ART_PVP_ZONES[zone] then return "pvp" end
+    -- Instance but not a known raid/pvp = dungeon
+    if IsInInstance() == 1 then return "dungeon" end
+    return "world"
+end
+
 if DB.point == nil then DB.point = "CENTER" end
 if DB.x == nil then DB.x = 0 end
 if DB.y == nil then DB.y = 0 end
@@ -37,6 +93,7 @@ local NAV_ITEMS = {
 	{ id="home",         label="Overview"     },
 	{ id="barprofiles",  label="Bar Profiles" },
 	{ id="autobuffs",    label="Auto-Buffs"   },
+	{ id="myconsumes",   label="My Consumes"  },
 	{ id="autorolls",    label="Auto-Rolls"   },
 	{ header=true,  label="Raids"        },
 	{ id="roleroster",   label="Raid Roles"   },
@@ -183,6 +240,9 @@ local function CreateMainFrame()
 	f:SetBackdropColor(0.03, 0.03, 0.04, 0.9)
 	f:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
 	tinsert(UISpecialFrames, "AmptieRaidToolsMainFrame")
+	f:SetScript("OnHide", function()
+		ART_CloseAllPopups()
+	end)
 
 	local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -10)
@@ -324,6 +384,7 @@ local function CreateMainFrame()
 	if AmptieRaidTools_InitItemChecks   then AmptieRaidTools_InitItemChecks(body)   end
 	if AmptieRaidTools_InitBuffChecks   then AmptieRaidTools_InitBuffChecks(body)   end
 	if AmptieRaidTools_InitClassBuffs   then AmptieRaidTools_InitClassBuffs(body)   end
+	if AmptieRaidTools_InitMyConsumes   then AmptieRaidTools_InitMyConsumes(body)   end
 	if AmptieRaidTools_InitLootRules    then AmptieRaidTools_InitLootRules(body)    end
 	if AmptieRaidTools_InitQoLSettings  then AmptieRaidTools_InitQoLSettings(body)  end
 

@@ -320,12 +320,52 @@ end
 
 local function SyncTauntersFromRoster()
 	local cfg = GetTaunterConfig()
-	local inCfg = {}
-	for i = 1, getn(cfg) do inCfg[cfg[i].name] = true end
+	-- Rebuild from scratch: only Tanks and Melees with tauntable class
+	local keep = {}
+	for i = 1, getn(cfg) do keep[cfg[i].name] = cfg[i] end
+	-- Clear config
+	for i = getn(cfg), 1, -1 do table.remove(cfg, i) end
+	cfg.n = 0
+	local specs = ART_RL_GetRosterSpecs and ART_RL_GetRosterSpecs() or {}
 	for name, class in pairs(playerClasses) do
-		if TAUNT_CLASS_SPELL[class] and not inCfg[name] then
-			tinsert(cfg, { name = name, selected = false })
+		if TAUNT_CLASS_SPELL[class] then
+			local spec = specs[name]
+			local role = spec and ART_GetSpecRole and ART_GetSpecRole(spec)
+			-- Include if: role is Tank/Melee, OR spec not known yet (fallback)
+			if role == "Tank" or role == "Melee" or not role then
+				local prev = keep[name]
+				tinsert(cfg, { name = name, selected = prev and prev.selected or false })
+			end
 		end
+	end
+	-- Sort: Maintanks by MT order → Tanks → Melees → alphabetical
+	local mtNames = {}
+	if amptieRaidToolsDB and amptieRaidToolsDB.raidAssists
+	   and amptieRaidToolsDB.raidAssists.mainTanks then
+		local mts = amptieRaidToolsDB.raidAssists.mainTanks
+		for i = 1, 8 do
+			if mts[i] and mts[i] ~= "" then mtNames[mts[i]] = i end
+		end
+	end
+	local function sortOrd(entry)
+		local mt = mtNames[entry.name]
+		if mt then return mt end  -- 1-8 for maintanks
+		local spec = specs[entry.name]
+		local role = spec and ART_GetSpecRole and ART_GetSpecRole(spec)
+		if role == "Tank"  then return 100 end
+		if role == "Melee" then return 200 end
+		return 300
+	end
+	-- Insertion sort (stable)
+	for i = 2, getn(cfg) do
+		local v  = cfg[i]
+		local vo = sortOrd(v)
+		local j  = i - 1
+		while j >= 1 and sortOrd(cfg[j]) > vo do
+			cfg[j+1] = cfg[j]
+			j = j - 1
+		end
+		cfg[j+1] = v
 	end
 end
 
@@ -1405,6 +1445,7 @@ function AmptieRaidTools_InitRaidCDs(body)
 	local MAX_TLIST  = 12
 	local tListRows  = {}
 	local ROW_LIST_H = 22
+	local tListScrollOff = 0
 	local arrowBD = {
 		bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
 		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -1458,11 +1499,17 @@ function AmptieRaidTools_InitRaidCDs(body)
 	RefreshTaunterListUI = function()
 		local cfg  = GetTaunterConfig()
 		local n    = getn(cfg)
-		local show = n < MAX_TLIST and n or MAX_TLIST
+		-- Clamp scroll offset
+		local maxOff = n > MAX_TLIST and (n - MAX_TLIST) or 0
+		if tListScrollOff > maxOff then tListScrollOff = maxOff end
+		if tListScrollOff < 0 then tListScrollOff = 0 end
+		local visible = n - tListScrollOff
+		if visible > MAX_TLIST then visible = MAX_TLIST end
 		for i = 1, MAX_TLIST do
 			local row = tListRows[i]
-			if i <= show then
-				local entry  = cfg[i]
+			if i <= visible then
+				local ci = i + tListScrollOff
+				local entry  = cfg[ci]
 				local class  = playerClasses[entry.name]
 				local unit   = playerUnits[entry.name]
 				local online = unit and UnitIsConnected(unit)
@@ -1475,7 +1522,7 @@ function AmptieRaidTools_InitRaidCDs(body)
 					row.nameFS:SetTextColor(0.45, 0.45, 0.45, 1)
 				end
 				row.cb:SetChecked(entry.selected)
-				row.idx = i
+				row.idx = ci
 				row:Show()
 			else
 				row:Hide()
@@ -1514,6 +1561,20 @@ function AmptieRaidTools_InitRaidCDs(body)
 	syncBtn:SetScript("OnClick", function()
 		RebuildRoster()
 		SyncTauntersFromRoster()
+		tListScrollOff = 0
+		RefreshTaunterListUI()
+	end)
+
+	-- Mousewheel scrolling for taunt list
+	local tListWheel = CreateFrame("Frame", nil, frame)
+	tListWheel:SetPoint("TOPLEFT", rotHdr, "BOTTOMLEFT", 0, -4)
+	tListWheel:SetWidth(210)
+	tListWheel:SetHeight(MAX_TLIST * (ROW_LIST_H + 2))
+	tListWheel:EnableMouseWheel(true)
+	tListWheel:SetScript("OnMouseWheel", function()
+		local delta = arg1
+		tListScrollOff = tListScrollOff - delta
+		if tListScrollOff < 0 then tListScrollOff = 0 end
 		RefreshTaunterListUI()
 	end)
 

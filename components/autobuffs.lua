@@ -61,23 +61,12 @@ local ART_AB_Categories = {
 -- Raid instance check (zone list analogous to InstanceTracker)
 -- ============================================================
 
-local ART_AB_RaidZones = {
-	["Zul'Gurub"]            = true,
-	["Tower of Karazhan"]    = true,
-	["Ruins of Ahn'Qiraj"]   = true,
-	["Temple of Ahn'Qiraj"]  = true,
-	["Ahn'Qiraj"]            = true,
-	["Molten Core"]          = true,
-	["Blackwing Lair"]       = true,
-	["Naxxramas"]            = true,
-	["Emerald Sanctum"]      = true,
-	["Onyxia's Lair"]        = true,
-}
-
+-- Use global ART_ZONES for raid detection
 local function ART_AB_IsInRaid()
 	if IsInInstance() ~= 1 then return false end
-	local zone = GetRealZoneText()
-	return zone and ART_AB_RaidZones[zone] and true or false
+	local key = ART_GetCurrentZoneKey and ART_GetCurrentZoneKey() or "world"
+	-- Any key that's not dungeon/pvp/world is a raid
+	return key ~= "dungeon" and key ~= "pvp" and key ~= "world"
 end
 
 -- ============================================================
@@ -597,6 +586,7 @@ function AmptieRaidTools_InitAutoBuffs(body)
 		PRIEST  = { "Discipline Smite", "Discipline Holy", "Holy", "Shadow" },
 		WARLOCK = { "SM/Ruin", "Affliction", "Demonology", "Destruction Fire" },
 	}
+	ART_SpecsByClass = ART_AB_SpecsByClass  -- expose globally for myconsumes
 	local _, playerClass = UnitClass("player")
 	playerClass = playerClass and string.upper(tostring(playerClass)) or ""
 	local ART_AB_KnownSpecs = ART_AB_SpecsByClass[playerClass] or {}

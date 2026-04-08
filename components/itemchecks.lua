@@ -118,6 +118,7 @@ local ART_IC_BY_KEY = {}
 for _i = 1, getn(ART_IC_ITEMS) do
     ART_IC_BY_KEY[ART_IC_ITEMS[_i].key] = ART_IC_ITEMS[_i]
 end
+ART_IC_BY_KEY_ALL = ART_IC_BY_KEY
 
 -- Hardcoded icon paths (avoids relying on GetItemInfo cache)
 local ART_IC_ICONS = {

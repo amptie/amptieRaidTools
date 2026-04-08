@@ -153,6 +153,20 @@ local ART_BC_BUFFS = {
     { key="ELEM_SHARP_STONE",    name="Elemental Sharpening Stone",       buffName="Sharpen Weapon - Critical",        sec="weapon",     icon="Interface\\Icons\\INV_Stone_02",                  itemKey="ELEM_SHARP_STONE"  },
     { key="BRILL_MANA_OIL",      name="Brilliant Mana Oil",               buffName="Brilliant Mana Oil",               sec="weapon",     icon="Interface\\Icons\\INV_Potion_100",                itemKey="BRILL_MANA_OIL"    },
     { key="BRILL_WIZ_OIL",       name="Brilliant Wizard Oil",             buffName="Brilliant Wizard Oil",             sec="weapon",     icon="Interface\\Icons\\INV_Potion_105",                itemKey="BRILL_WIZ_OIL"     },
+    -- Shaman weapon imbues (spellbook casts, classReq for dropdown filtering)
+    { key="WPN_FLAMETONGUE",     name="Flametongue Weapon",               buffName="Flametongue Weapon",               sec="weapon",     icon="Interface\\Icons\\Spell_Fire_FlameTounge",        itemKey=nil, classReq="SHAMAN", spellCast="Flametongue Weapon" },
+    { key="WPN_FROSTBRAND",      name="Frostbrand Weapon",                buffName="Frostbrand Weapon",                sec="weapon",     icon="Interface\\Icons\\Spell_Frost_FrostBrand",        itemKey=nil, classReq="SHAMAN", spellCast="Frostbrand Weapon"  },
+    { key="WPN_ROCKBITER",       name="Rockbiter Weapon",                 buffName="Rockbiter Weapon",                 sec="weapon",     icon="Interface\\Icons\\Spell_Nature_RockBiter",        itemKey=nil, classReq="SHAMAN", spellCast="Rockbiter Weapon"   },
+    { key="WPN_WINDFURY",        name="Windfury Weapon",                  buffName="Windfury Weapon",                  sec="weapon",     icon="Interface\\Icons\\Spell_Nature_Cyclone",          itemKey=nil, classReq="SHAMAN", spellCast="Windfury Weapon"    },
+    -- Rogue poisons (items, classReq for dropdown filtering)
+    { key="PSN_INSTANT",         name="Instant Poison VI",                buffName="Instant Poison VI",                sec="weapon",     icon="Interface\\Icons\\Ability_Poisons",               itemKey=nil, classReq="ROGUE", itemIds={8928}  },
+    { key="PSN_DEADLY",          name="Deadly Poison V",                  buffName="Deadly Poison V",                  sec="weapon",     icon="Interface\\Icons\\Ability_Rogue_DualWeild",       itemKey=nil, classReq="ROGUE", itemIds={20844} },
+    { key="PSN_MINDNUMB",        name="Mind-numbing Poison III",          buffName="Mind-numbing Poison III",          sec="weapon",     icon="Interface\\Icons\\Spell_Nature_NullifyDisease",   itemKey=nil, classReq="ROGUE", itemIds={9186}  },
+    { key="PSN_CRIPPLING",       name="Crippling Poison II",              buffName="Crippling Poison II",              sec="weapon",     icon="Interface\\Icons\\Ability_PoisonSting",           itemKey=nil, classReq="ROGUE", itemIds={3776}  },
+    { key="PSN_WOUND",           name="Wound Poison IV",                  buffName="Wound Poison IV",                  sec="weapon",     icon="Interface\\Icons\\INV_Misc_Herb_16",              itemKey=nil, classReq="ROGUE", itemIds={10922} },
+    { key="PSN_DISSOLVENT",      name="Dissolvent Poison II",             buffName="Dissolvent Poison II",             sec="weapon",     icon="Interface\\Icons\\INV_Potion_27",                 itemKey=nil, classReq="ROGUE", itemIds={54010} },
+    { key="PSN_CORROSIVE",       name="Corrosive Poison II",              buffName="Corrosive Poison II",              sec="weapon",     icon="Interface\\Icons\\Ability_Rogue_Rupture",         itemKey=nil, classReq="ROGUE", itemIds={47409} },
+    { key="PSN_AGITATING",       name="Agitating Poison",                 buffName="Agitating Poison",                 sec="weapon",     icon="Interface\\Icons\\INV_Potion_119",                itemKey=nil, classReq="ROGUE", itemIds={65032} },
     -- Buff Foods
     { key="FOOD_ANY",            name="Buff Food (any)",                  buffName=nil,
       buffNames={"Well Fed","Increased Stamina","Increased Agility","Increased Intellect",
@@ -165,16 +179,47 @@ local ART_BC_BUFFS = {
     { key="FOOD_HEALING",        name="Food – Increased Healing Bonus",   buffName="Increased Healing Bonus",          sec="food",       icon="Interface\\Icons\\INV_Misc_Food_52",              itemKey=nil                 },
     { key="FOOD_INTELLECT",      name="Food – Increased Intellect",       buffName="Increased Intellect",              sec="food",       icon="Interface\\Icons\\INV_Misc_Food_14",              itemKey=nil                 },
     { key="FOOD_DRAGON",         name="Dragonbreath Chili",               buffName="Dragonbreath Chili",               sec="food",       icon="Interface\\Icons\\INV_Misc_Food_77",              itemKey=nil                 },
+    -- Tank foods
+    { key="FOOD_HARDENED_MUSH",  name="Hardened Mushroom",                buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\inv_mushroom_15",               itemKey=nil,  isFood=true, itemIds={51717}  },
+    { key="FOOD_CHIMAEROK",      name="Dirge's Kickin' Chimaerok Chops",  buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\INV_Misc_Food_65",              itemKey=nil,  isFood=true, itemIds={25659}  },
+    { key="FOOD_FISHE_CHOC",     name="Le Fishe Au Chocolat",             buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\INV_Misc_Fishe_Au_Chocolate",   itemKey=nil,  isFood=true, itemIds={45625}  },
+    { key="FOOD_WILDHAMMER_YAM", name="Mealy Wildhammer Yam",             buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\wildhammer_yams_2",             itemKey=nil,  isFood=true, itemIds={42157}  },
+    { key="FOOD_TELABIM_MEDLEY", name="Danonzo's Tel'Abim Medley",        buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\INV_Misc_Food_73",              itemKey=nil,  isFood=true, itemIds={57051}  },
+    { key="FOOD_SANDSWEPT_SPICY",name="Spicy Sandswept Carrots",          buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\sandswept_carrots_4",           itemKey=nil,  isFood=true, itemIds={42162}  },
+    { key="FOOD_DEEP_SEA_STEW",  name="Deep Sea Stew",                    buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\INV_Misc_Food_63",              itemKey=nil,  isFood=true, itemIds={32314}  },
+    { key="FOOD_GURUBASHI_GUMBO",name="Gurubashi Gumbo",                  buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\inv_misc_food_101",             itemKey=nil,  isFood=true, itemIds={46085}  },
+    -- Melee foods
+    { key="FOOD_POWER_MUSH",     name="Power Mushroom",                   buffName="Increased Agility",                sec="food",       icon="Interface\\Icons\\inv_mushroom_14",               itemKey=nil,  isFood=true, itemIds={51720}  },
+    { key="FOOD_DESERT_DUMP",    name="Smoked Desert Dumplings",          buffName="Increased Agility",                sec="food",       icon="Interface\\Icons\\INV_Misc_Food_64",              itemKey=nil,  isFood=true, itemIds={24801}  },
+    { key="FOOD_MIGHTFISH",      name="Mightfish Steak",                  buffName="Increased Stamina",                sec="food",       icon="Interface\\Icons\\INV_Misc_Food_47",              itemKey=nil,  isFood=true, itemIds={18246}  },
+    { key="FOOD_GRILLED_SQUID",  name="Grilled Squid",                    buffName="Increased Agility",                sec="food",       icon="Interface\\Icons\\inv_misc_fish_37",              itemKey=nil,  isFood=true, itemIds={18240}  },
+    { key="FOOD_SOUR_BERRY",     name="Sour Mountain Berry",              buffName="Well Fed",                         sec="food",       icon="Interface\\Icons\\INV_Misc_Food_74",              itemKey=nil,  isFood=true, itemIds={51711}  },
+    { key="FOOD_TELABIM_SURP",   name="Danonzo's Tel'Abim Surprise",      buffName="Increased Agility",                sec="food",       icon="Interface\\Icons\\inv_misc_food_92",              itemKey=nil,  isFood=true, itemIds={57047}  },
+    { key="FOOD_SANDSWEPT_CRUNCH",name="Crunchy Sandswept Carrots",       buffName="Increased Agility",                sec="food",       icon="Interface\\Icons\\sandswept_carrots_2",           itemKey=nil,  isFood=true, itemIds={42161}  },
+    -- Caster/Healer foods
+    { key="FOOD_NIGHTFIN",       name="Nightfin Soup",                    buffName="Mana Regeneration",                sec="food",       icon="Interface\\Icons\\INV_Drink_22",                  itemKey=nil,  isFood=true, itemIds={18243}  },
+    { key="FOOD_SOUR_GRAPES",    name="Sour Northwind Grapes",            buffName="Well Fed",                         sec="food",       icon="Interface\\Icons\\INV_Misc_Food_57",              itemKey=nil,  isFood=true, itemIds={42157}  },
+    { key="FOOD_TELABIM_DELIGHT",name="Danonzo's Tel'Abim Delight",       buffName="Mana Regeneration",                sec="food",       icon="Interface\\Icons\\INV_Drink_21",                  itemKey=nil,  isFood=true, itemIds={57049}  },
+    { key="FOOD_HERBAL_SALAD",   name="Empowering Herbal Salad",          buffName="Increased Healing Bonus",          sec="food",       icon="Interface\\Icons\\INV_Misc_Food_Salad",           itemKey=nil,  isFood=true, itemIds={49551}  },
+    { key="FOOD_WATERMELON",     name="Sweet Watermelon",                 buffName="Increased Intellect",              sec="food",       icon="Interface\\Icons\\inv_misc_food_111",             itemKey=nil,  isFood=true, itemIds={51712}  },
+    { key="FOOD_RUNN_TUM",       name="Runn Tum Tuber Surprise",          buffName="Increased Intellect",              sec="food",       icon="Interface\\Icons\\INV_Misc_Food_63",              itemKey=nil,  isFood=true, itemIds={22761}  },
+    { key="FOOD_HOT_BASS",       name="Hot Smoked Bass",                  buffName="Increased Intellect",              sec="food",       icon="Interface\\Icons\\INV_Misc_Fish_03",              itemKey=nil,  isFood=true, itemIds={18242}  },
+    -- Protection food
+    { key="FOOD_HONEYCOMB",      name="Honeycomb Delight",                buffName="Well Fed",                         sec="food",       icon="Interface\\Icons\\cooked_honey_1",                itemKey=nil,  isFood=true, itemIds={45999}  },
 }
 
 -- Lookup tables
 local ART_BC_BY_KEY  = {}  -- key  → buff entry
+ART_BC_BUFFS_ALL     = nil -- set after table is built (global for myconsumes)
+ART_BC_BY_KEY_ALL    = nil
 local ART_IC_TO_BC   = {}  -- IC item key → BC buff key
 for i = 1, getn(ART_BC_BUFFS) do
     local b = ART_BC_BUFFS[i]
     ART_BC_BY_KEY[b.key] = b
     if b.itemKey then ART_IC_TO_BC[b.itemKey] = b.key end
 end
+ART_BC_BUFFS_ALL  = ART_BC_BUFFS
+ART_BC_BY_KEY_ALL = ART_BC_BY_KEY
 
 local BC_SEC_LABELS = {
     flask      = "── Flasks ──",
@@ -246,6 +291,8 @@ local function GetBCDB()
     if not db.buffCheckProfiles then
         db.buffCheckProfiles = { ["Default"] = { rules={} } }
     end
+    if db.bcOvlIconSize == nil then db.bcOvlIconSize = 32 end
+    if db.bcOvlPerRow   == nil then db.bcOvlPerRow   = 6  end
     if not db.activeBCProfile or not db.buffCheckProfiles[db.activeBCProfile] then
         db.activeBCProfile = "Default"
         if not db.buffCheckProfiles["Default"] then
@@ -958,8 +1005,41 @@ local bcRosterDirty    = false
 local BC_POLL_INTERVAL = 5.0
 local bcPollTimer      = 0
 
+-- ── Combat state ─────────────────────────────────────────────
+local bcInCombat = false
+
+local function BCSetOverlayCombatState(inCombat)
+    if not bcOverlayFrame then return end
+    if not bcOverlayFrame.combatFS then
+        local cf = CreateFrame("Frame", nil, bcOverlayFrame)
+        cf:SetAllPoints(bcOverlayFrame)
+        cf:SetFrameLevel(bcOverlayFrame:GetFrameLevel() + 20)
+        local cfs = cf:CreateFontString(nil, "OVERLAY")
+        cfs:SetFont("Fonts\\FRIZQT__.TTF", 11, "THICKOUTLINE")
+        cfs:SetPoint("CENTER", bcOverlayFrame, "CENTER", 0, -floor(BC_OVL_HDR_H / 2))
+        cfs:SetTextColor(0.7, 0.3, 0.3, 1)
+        cfs:SetText("infight: disabled")
+        bcOverlayFrame.combatFS = cfs
+        bcOverlayFrame.combatFrame = cf
+    end
+    if inCombat then
+        for i = 1, getn(bcOverlayFrame.icons) do
+            local ic = bcOverlayFrame.icons[i]
+            if ic:IsShown() then ic.tex:SetVertexColor(0.3, 0.3, 0.3) end
+        end
+        bcOverlayFrame.combatFS:Show()
+    else
+        for i = 1, getn(bcOverlayFrame.icons) do
+            local ic = bcOverlayFrame.icons[i]
+            ic.tex:SetVertexColor(1, 1, 1)
+        end
+        bcOverlayFrame.combatFS:Hide()
+    end
+end
+
 local bcDebounceFrame = CreateFrame("Frame", nil, UIParent)
 bcDebounceFrame:SetScript("OnUpdate", function()
+    if bcInCombat then return end  -- suspend all processing in combat
     local dt = arg1
     bcPollTimer = bcPollTimer + dt
     -- Jittered response: send when this player's scheduled slot arrives
@@ -991,12 +1071,26 @@ end)
 local bcEvt = CreateFrame("Frame", nil, UIParent)
 bcEvt:RegisterEvent("CHAT_MSG_ADDON")
 bcEvt:RegisterEvent("PLAYER_AURAS_CHANGED")
+bcEvt:RegisterEvent("PLAYER_REGEN_DISABLED")
+bcEvt:RegisterEvent("PLAYER_REGEN_ENABLED")
 bcEvt:SetScript("OnEvent", function()
     local evt = event
     local a1, a2, a3, a4 = arg1, arg2, arg3, arg4
 
+    if evt == "PLAYER_REGEN_DISABLED" then
+        bcInCombat = true
+        BCSetOverlayCombatState(true)
+        return
+    elseif evt == "PLAYER_REGEN_ENABLED" then
+        bcInCombat = false
+        BCSetOverlayCombatState(false)
+        return
+    end
+
+    if bcInCombat then return end  -- ignore everything in combat
+
     if evt == "PLAYER_AURAS_CHANGED" then
-        bcAurasDirty = true   -- handled by 5s poll timer
+        bcAurasDirty = true
         return
     end
 
@@ -1137,19 +1231,18 @@ function ART_BC_SetNotifyRefresh(fn) bcNotifyRefresh = fn end
 -- Overlay  (per-buff view: "BuffName: Player1, Player2, ...")
 -- ============================================================
 local bcOverlayFrame = nil
-local BC_OVL_W      = 260
 local BC_OVL_HDR_H  = 24
-local BC_OVL_ROW_H  = 18
-local BC_OVL_MAX_VIS = 16
+local BC_OVL_PAD    = 6
+local BC_OVL_GAP    = 3
 
 local function CreateBCOverlay()
-    local db = GetBCDB()
+    local db = amptieRaidToolsDB
 
     local f = CreateFrame("Frame", "ART_BC_Overlay", UIParent)
     f:SetFrameStrata("MEDIUM")
-    f:SetWidth(BC_OVL_W)
-    f:SetHeight(BC_OVL_HDR_H + BC_OVL_ROW_H + 8)
-    if db.bcOverlayX and db.bcOverlayY then
+    f:SetWidth(200)
+    f:SetHeight(60)
+    if db and db.bcOverlayX and db.bcOverlayY then
         f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", db.bcOverlayX, db.bcOverlayY)
     else
         f:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
@@ -1158,14 +1251,6 @@ local function CreateBCOverlay()
     f:SetClampedToScreen(true)
     f:RegisterForDrag("LeftButton")
     f:EnableMouse(true)
-    f:SetBackdrop({
-        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = { left=3, right=3, top=3, bottom=3 },
-    })
-    f:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
-    f:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
     f:Hide()
 
     f:SetScript("OnDragStart", function() this:StartMoving() end)
@@ -1175,52 +1260,41 @@ local function CreateBCOverlay()
         if db2 then db2.bcOverlayX = this:GetLeft(); db2.bcOverlayY = this:GetBottom() end
     end)
 
-    -- Header
-    local hdrFS = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    hdrFS:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -7)
+    -- Header bar with backdrop
+    local hdr = CreateFrame("Frame", nil, f)
+    hdr:SetHeight(BC_OVL_HDR_H)
+    hdr:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+    hdr:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+    hdr:SetBackdrop({
+        bgFile   = "Interface\\Tooltips\\UI-Tooltip-Background",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 10,
+        insets = { left=3, right=3, top=3, bottom=3 },
+    })
+    hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.92)
+    hdr:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+    f.hdrBar = hdr
+
+    local hdrFS = hdr:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hdrFS:SetPoint("TOPLEFT", hdr, "TOPLEFT", 8, -7)
     hdrFS:SetJustifyH("LEFT")
     hdrFS:SetTextColor(1, 0.82, 0, 1)
     hdrFS:SetText("Buff Check")
     f.hdrFS = hdrFS
 
-    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    local closeBtn = CreateFrame("Button", nil, hdr, "UIPanelCloseButton")
     closeBtn:SetWidth(18); closeBtn:SetHeight(18)
-    closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
+    closeBtn:SetPoint("TOPRIGHT", hdr, "TOPRIGHT", 2, 2)
     closeBtn:SetScript("OnClick", function()
         local db2 = amptieRaidToolsDB
         if db2 then db2.bcOverlayShown = false end
         bcOverlayFrame:Hide()
     end)
 
-    -- Scroll
-    local sf = CreateFrame("ScrollFrame", nil, f)
-    sf:SetPoint("TOPLEFT",     f, "TOPLEFT",     5, -(BC_OVL_HDR_H + 2))
-    sf:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -5, 5)
-    f.sf = sf
+    f.icons = {}
 
-    local content = CreateFrame("Frame", nil, sf)
-    content:SetWidth(BC_OVL_W - 10)
-    content:SetHeight(1)
-    sf:SetScrollChild(content)
-    f.content = content
-
-    local scrollOff = 0
-    local function SetOvlScroll(val)
-        local maxS = math.max(content:GetHeight() - sf:GetHeight(), 0)
-        if val < 0 then val = 0 end
-        if val > maxS then val = maxS end
-        scrollOff = val
-        content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", sf, "TOPLEFT", 0, val)
-    end
-    sf:EnableMouseWheel(true)
-    sf:SetScript("OnMouseWheel", function() SetOvlScroll(scrollOff - arg1 * BC_OVL_ROW_H * 3) end)
-    f.SetOvlScroll = SetOvlScroll
-
-    f.rows = {}
-
-    local emptyLabel = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    emptyLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 2, -4)
+    local emptyLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    emptyLabel:SetPoint("TOPLEFT", f, "TOPLEFT", BC_OVL_PAD + 2, -(BC_OVL_HDR_H + 4))
     emptyLabel:SetTextColor(0.5, 0.5, 0.5, 1)
     emptyLabel:SetText("No check performed yet.")
     f.emptyLabel = emptyLabel
@@ -1232,6 +1306,8 @@ local function RefreshBCOverlay()
     if not bcOverlayFrame then return end
     local db  = GetBCDB()
     local db2 = amptieRaidToolsDB
+    local iconSz = (db2 and db2.bcOvlIconSize) or 32
+    local perRow = (db2 and db2.bcOvlPerRow)   or 6
 
     -- Count total players who responded
     local totalResponded = 0
@@ -1257,21 +1333,21 @@ local function RefreshBCOverlay()
 
     local hasMissing = getn(buffOrder) > 0
 
+    -- Hide all existing icons
+    for i = 1, getn(bcOverlayFrame.icons) do bcOverlayFrame.icons[i]:Hide() end
+    bcOverlayFrame.emptyLabel:Hide()
+
     -- ── Visibility logic ─────────────────────────────────────────
     if not hasMissing then
         if bcCheckId and totalResponded > 0 then
-            -- All responded and all OK → auto-hide
             if bcOverlayFrame:IsShown() then bcOverlayFrame:Hide() end
         else
-            -- Waiting for responses or no check yet → show status label if frame is visible
             if bcOverlayFrame:IsShown() then
                 bcOverlayFrame.hdrFS:SetText("Buff Check: " .. (db.activeBCProfile or "--"))
-                for i = 1, getn(bcOverlayFrame.rows) do bcOverlayFrame.rows[i]:Hide() end
                 bcOverlayFrame.emptyLabel:SetText(bcCheckId and "Waiting for responses..." or "No check performed yet.")
                 bcOverlayFrame.emptyLabel:Show()
-                local visH = BC_OVL_ROW_H + 8
-                bcOverlayFrame.content:SetHeight(visH)
-                bcOverlayFrame:SetHeight(BC_OVL_HDR_H + visH + 8)
+                bcOverlayFrame:SetWidth(BC_OVL_PAD * 2 + 160)
+                bcOverlayFrame:SetHeight(BC_OVL_HDR_H + 22 + BC_OVL_PAD)
             end
         end
         return
@@ -1282,7 +1358,7 @@ local function RefreshBCOverlay()
     if db2 and db2.bcOverlayShown and not bcOverlayFrame:IsShown() and inRaid then
         bcOverlayFrame:Show()
     end
-    if not bcOverlayFrame:IsShown() then return end  -- user explicitly closed
+    if not bcOverlayFrame:IsShown() then return end
 
     -- Sort buff order by position in ART_BC_BUFFS table
     local buffPos = {}
@@ -1292,29 +1368,41 @@ local function RefreshBCOverlay()
     end)
 
     bcOverlayFrame.hdrFS:SetText("Buff Check: " .. (db.activeBCProfile or "--"))
-    -- Hide all rows
-    for i = 1, getn(bcOverlayFrame.rows) do bcOverlayFrame.rows[i]:Hide() end
-    bcOverlayFrame.emptyLabel:Hide()
 
-    local numRows  = getn(buffOrder)
-    local visCount = math.min(numRows, BC_OVL_MAX_VIS)
-    bcOverlayFrame.content:SetHeight(math.max(numRows * BC_OVL_ROW_H, 1))
-    bcOverlayFrame:SetHeight(BC_OVL_HDR_H + visCount * BC_OVL_ROW_H + 10)
-    bcOverlayFrame.sf:SetHeight(visCount * BC_OVL_ROW_H)
+    local numIcons = getn(buffOrder)
+    local numCols  = math.min(numIcons, perRow)
+    local numRowsN = math.ceil(numIcons / perRow)
 
-    for i = 1, numRows do
+    local frameW = BC_OVL_PAD * 2 + numCols * iconSz + (numCols - 1) * BC_OVL_GAP
+    local frameH = BC_OVL_HDR_H + numRowsN * iconSz + (numRowsN - 1) * BC_OVL_GAP + BC_OVL_PAD
+    local finalW = math.max(frameW, 60)
+    bcOverlayFrame:SetWidth(finalW)
+    bcOverlayFrame:SetHeight(frameH)
+    if bcOverlayFrame.hdrBar then bcOverlayFrame.hdrBar:SetWidth(finalW) end
+
+    for i = 1, numIcons do
         local bk   = buffOrder[i]
         local buff = ART_BC_BY_KEY[bk]
-        local row  = bcOverlayFrame.rows[i]
-        if not row then
-            row = CreateFrame("Frame", nil, bcOverlayFrame.content)
-            row:SetHeight(BC_OVL_ROW_H)
-            row:EnableMouse(true)
-            row:SetBackdrop({ bgFile="Interface\\Tooltips\\UI-Tooltip-Background", tile=true, tileSize=16, edgeSize=0, insets={left=0,right=0,top=0,bottom=0} })
-            row.lineFS = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            row.lineFS:SetPoint("LEFT", row, "LEFT", 4, 0)
-            row.lineFS:SetJustifyH("LEFT")
-            row:SetScript("OnEnter", function()
+        local col  = math.mod(i - 1, perRow)
+        local row  = floor((i - 1) / perRow)
+        local xOff = BC_OVL_PAD + col * (iconSz + BC_OVL_GAP)
+        local yOff = -(BC_OVL_HDR_H + row * (iconSz + BC_OVL_GAP))
+
+        local btn = bcOverlayFrame.icons[i]
+        if not btn then
+            btn = CreateFrame("Button", nil, bcOverlayFrame)
+            btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            btn:EnableMouse(true)
+            local tex = btn:CreateTexture(nil, "BACKGROUND")
+            tex:SetAllPoints(btn)
+            btn.tex = tex
+            local countFS = btn:CreateFontString(nil, "OVERLAY")
+            countFS:SetFont("Fonts\\FRIZQT__.TTF", 12, "THICKOUTLINE")
+            countFS:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1, 2)
+            countFS:SetJustifyH("RIGHT")
+            countFS:SetTextColor(1, 0.82, 0, 1)
+            btn.countFS = countFS
+            btn:SetScript("OnEnter", function()
                 if not this.missingNames or getn(this.missingNames) == 0 then return end
                 local tipLines = {}
                 tinsert(tipLines, { this.buffLabel, 1, 0.82, 0 })
@@ -1322,53 +1410,47 @@ local function RefreshBCOverlay()
                 for ni = 1, getn(this.missingNames) do
                     tinsert(tipLines, { this.missingNames[ni], 1, 0.4, 0.4 })
                 end
+                tinsert(tipLines, { " ", 1, 1, 1 })
+                tinsert(tipLines, { "Shift-click: announce in chat", 0.5, 0.5, 0.5 })
                 BCTipShow(bcOverlayFrame, tipLines)
             end)
-            row:SetScript("OnLeave", function() BCTipHide() end)
-            tinsert(bcOverlayFrame.rows, row)
+            btn:SetScript("OnLeave", function() BCTipHide() end)
+            btn:SetScript("OnClick", function()
+                if not IsShiftKeyDown() then return end
+                if not this.missingNames or getn(this.missingNames) == 0 then return end
+                local msg = "Missing " .. (this.buffLabel or "?") .. ": " .. table.concat(this.missingNames, ", ")
+                local ch
+                if GetNumRaidMembers() > 0 then ch = "RAID"
+                elseif GetNumPartyMembers() > 0 then ch = "PARTY" end
+                if ch then
+                    SendChatMessage(msg, ch)
+                else
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r " .. msg)
+                end
+            end)
+            tinsert(bcOverlayFrame.icons, btn)
         end
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", bcOverlayFrame.content, "TOPLEFT", 0, -(i-1)*BC_OVL_ROW_H)
-        row:SetPoint("RIGHT",   bcOverlayFrame.content, "RIGHT",   0, 0)
-        if math.mod(i, 2) == 0 then
-            row:SetBackdropColor(0.10, 0.10, 0.12, 0.5)
-        else
-            row:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
-        end
+
+        btn:SetWidth(iconSz)
+        btn:SetHeight(iconSz)
+        btn:ClearAllPoints()
+        btn:SetPoint("TOPLEFT", bcOverlayFrame, "TOPLEFT", xOff, yOff)
+
+        local buffIcon = buff and buff.icon or "Interface\\Icons\\INV_Misc_QuestionMark"
+        btn.tex:SetTexture(buffIcon)
+        local fontSize = math.max(floor(iconSz * 0.38), 9)
+        btn.countFS:SetFont("Fonts\\FRIZQT__.TTF", fontSize, "THICKOUTLINE")
 
         local buffLabel  = buff and buff.name or bk
         local missList   = missingByBuff[bk]
         table.sort(missList)
         local missCount  = getn(missList)
-        -- Use per-buff target count if available; fall back to totalResponded
-        local targetN    = bcBuffTargetCount[bk] or totalResponded
-        local haveCount  = math.max(0, targetN - missCount)
 
-        row.buffLabel    = buffLabel
-        row.missingNames = missList
-
-        row.lineFS:SetText(
-            "|cFFFFCC00" .. buffLabel .. ":|r " ..
-            "|cFFFF6644" .. haveCount .. "|r" ..
-            "|cFF888888/|r" ..
-            "|cFFAAAAAA" .. targetN .. "|r"
-        )
-        row:Show()
+        btn.countFS:SetText(tostring(missCount))
+        btn.buffLabel    = buffLabel
+        btn.missingNames = missList
+        btn:Show()
     end
-
-    -- Resize overlay width to fit the widest row (+ frame padding)
-    -- Padding: 5px sf-left + 4px lineFS-left + 4px lineFS-right + 5px sf-right = 18px
-    local PAD = 18
-    local minW = bcOverlayFrame.hdrFS:GetStringWidth() + 32  -- header + close button space
-    local maxW = minW
-    for i = 1, numRows do
-        local row = bcOverlayFrame.rows[i]
-        if row and row:IsShown() then
-            local tw = row.lineFS:GetStringWidth() + PAD
-            if tw > maxW then maxW = tw end
-        end
-    end
-    bcOverlayFrame:SetWidth(maxW)
 end
 
 -- ============================================================
@@ -1455,6 +1537,57 @@ function AmptieRaidTools_InitBuffChecks(body)
     sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
     sub:SetText("Define per-role buff requirements and verify them live in raid.")
     sub:SetTextColor(0.65, 0.65, 0.7, 1)
+
+    -- ── Overlay icon sliders (subtitle row, right-aligned to +Add Rule) ────
+    local initSz = (amptieRaidToolsDB and amptieRaidToolsDB.bcOvlIconSize) or 32
+    local initPr = (amptieRaidToolsDB and amptieRaidToolsDB.bcOvlPerRow)   or 6
+
+    -- Build chain from RIGHT to LEFT so prSl right edge = panel right - 8
+    local prSl = CreateFrame("Slider", "ART_BC_OvlPrSlider", panel)
+    prSl:SetWidth(60); prSl:SetHeight(12)
+    prSl:SetOrientation("HORIZONTAL")
+    prSl:SetMinMaxValues(1, 16); prSl:SetValueStep(1); prSl:SetValue(initPr)
+    prSl:SetPoint("RIGHT", panel, "TOPRIGHT", -8, 0)
+    prSl:SetPoint("TOP", sub, "TOP", 0, 0)
+    local prTh = prSl:CreateTexture(nil, "OVERLAY")
+    prTh:SetWidth(8); prTh:SetHeight(12); prTh:SetTexture(0.5, 0.5, 0.55, 0.9)
+    prSl:SetThumbTexture(prTh)
+    local prTr = prSl:CreateTexture(nil, "BACKGROUND")
+    prTr:SetAllPoints(prSl); prTr:SetTexture(0.12, 0.12, 0.15, 0.8)
+
+    local prLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    prLbl:SetPoint("RIGHT", prSl, "LEFT", -4, 0)
+    prLbl:SetTextColor(0.7, 0.7, 0.7, 1)
+    prLbl:SetText("Row:" .. initPr)
+
+    local szSl = CreateFrame("Slider", "ART_BC_OvlSzSlider", panel)
+    szSl:SetWidth(60); szSl:SetHeight(12)
+    szSl:SetOrientation("HORIZONTAL")
+    szSl:SetMinMaxValues(20, 64); szSl:SetValueStep(2); szSl:SetValue(initSz)
+    szSl:SetPoint("RIGHT", prLbl, "LEFT", -8, 0)
+    local szTh = szSl:CreateTexture(nil, "OVERLAY")
+    szTh:SetWidth(8); szTh:SetHeight(12); szTh:SetTexture(0.5, 0.5, 0.55, 0.9)
+    szSl:SetThumbTexture(szTh)
+    local szTr = szSl:CreateTexture(nil, "BACKGROUND")
+    szTr:SetAllPoints(szSl); szTr:SetTexture(0.12, 0.12, 0.15, 0.8)
+
+    local szLbl = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    szLbl:SetPoint("RIGHT", szSl, "LEFT", -4, 0)
+    szLbl:SetTextColor(0.7, 0.7, 0.7, 1)
+    szLbl:SetText("Size:" .. initSz)
+
+    szSl:SetScript("OnValueChanged", function()
+        local v = floor(this:GetValue())
+        if amptieRaidToolsDB then amptieRaidToolsDB.bcOvlIconSize = v end
+        szLbl:SetText("Size:" .. v)
+        if bcOverlayFrame and bcOverlayFrame:IsShown() then RefreshBCOverlay() end
+    end)
+    prSl:SetScript("OnValueChanged", function()
+        local v = floor(this:GetValue())
+        if amptieRaidToolsDB then amptieRaidToolsDB.bcOvlPerRow = v end
+        prLbl:SetText("Row:" .. v)
+        if bcOverlayFrame and bcOverlayFrame:IsShown() then RefreshBCOverlay() end
+    end)
 
     local hdiv = panel:CreateTexture(nil, "ARTWORK")
     hdiv:SetHeight(1)
@@ -2006,7 +2139,7 @@ function AmptieRaidTools_InitBuffChecks(body)
 
     -- Rules scroll
     local rulesSF = CreateFrame("ScrollFrame", nil, rulesPanel)
-    rulesSF:SetPoint("TOPLEFT",     rulesHdr,   "BOTTOMLEFT",  0, -4)
+    rulesSF:SetPoint("TOPLEFT",     rulesHdr, "BOTTOMLEFT",  0, -4)
     rulesSF:SetPoint("BOTTOMRIGHT", rulesPanel,  "BOTTOMRIGHT", 0, 0)
 
     local rulesContent = CreateFrame("Frame", nil, rulesSF)
