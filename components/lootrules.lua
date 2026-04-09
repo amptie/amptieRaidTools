@@ -2616,8 +2616,8 @@ local lcZoneFrame = CreateFrame("Frame","ART_LC_ZoneFrame",UIParent)
 lcZoneFrame:RegisterEvent("PLAYER_LOGIN")
 lcZoneFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 lcZoneFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-lcZoneFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-lcZoneFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+-- Roster updates handled by central ART_OnRosterUpdate (staggered)
+if ART_OnRosterUpdate then ART_OnRosterUpdate(function() ApplyLRZoneBinding() end, 0.7) end
 lcZoneFrame:SetScript("OnEvent",function() ApplyLRZoneBinding() end)
 
 -- ============================================================

@@ -207,6 +207,10 @@ local function MC_ScanPlayerBuffs()
     for k in pairs(mcBuffById) do mcBuffById[k] = nil end
     mcFoodActive = false
 
+    -- Pass 1: UnitBuff loop — collect SpellID → buffKey mapping by TEXTURE.
+    -- UnitBuff gives us spellId (SuperWoW) but NOT correct timeLeft.
+    local texToKey  = {}  -- texture → buffKey
+    local texIsFood = {}  -- texture → true
     for i = 1, 40 do
         local tex, stacks, spellId
         if MC_HAS_SUPERWOW then
@@ -216,44 +220,45 @@ local function MC_ScanPlayerBuffs()
         end
         if not tex then break end
 
-        local buffKey = nil
-        local isFood  = false
-
-        -- Primary: SpellID lookup (SuperWoW — zero false positives)
-        if spellId and spellId > 0 then
-            buffKey = MC_SPELL_TO_KEY[spellId]
-            if MC_FOOD_SPELLS[spellId] then isFood = true end
-        end
-
-        -- Fallback: Texture lookup (non-SuperWoW)
-        if not buffKey and not isFood and tex then
+        if MC_HAS_SUPERWOW and spellId and spellId > 0 then
+            local bk = MC_SPELL_TO_KEY[spellId]
+            if bk then texToKey[tex] = bk end
+            if MC_FOOD_SPELLS[spellId] then texIsFood[tex] = true end
+        elseif not MC_HAS_SUPERWOW then
             local texKey = MC_TEX_TO_KEY[tex]
-            if texKey == "FOOD" then
-                isFood = true
-            elseif texKey then
-                buffKey = texKey
-            end
+            if texKey == "FOOD" then texIsFood[tex] = true
+            elseif texKey then texToKey[tex] = texKey end
         end
+    end
 
-        -- Get time remaining
-        local tl = GetPlayerBuffTimeLeft(i - 1)
-        local val = (tl and tl > 0) and tl or true
+    -- Pass 2: GetPlayerBuff loop — collect timeLeft using the correct buffIndex.
+    -- Match to buffKey via texture (which is the same in both systems).
+    for slot = 0, 39 do
+        local buffIndex = GetPlayerBuff(slot, "HELPFUL")
+        if buffIndex < 0 then break end
+        local tex = GetPlayerBuffTexture(buffIndex)
+        if tex then
+            local buffKey = texToKey[tex]
+            local isFood  = texIsFood[tex]
+            local tl = GetPlayerBuffTimeLeft(buffIndex)
+            local val = (tl and tl > 0) and tl or true
 
-        if isFood then
-            if type(val) == "number" then
-                if not mcFoodActive or (type(mcFoodActive) ~= "number") or val > mcFoodActive then
-                    mcFoodActive = val
+            if isFood then
+                if type(val) == "number" then
+                    if not mcFoodActive or (type(mcFoodActive) ~= "number") or val > mcFoodActive then
+                        mcFoodActive = val
+                    end
+                elseif not mcFoodActive then
+                    mcFoodActive = true
                 end
-            elseif not mcFoodActive then
-                mcFoodActive = true
-            end
-        elseif buffKey then
-            local existing = mcBuffById[buffKey]
-            if not existing then
-                mcBuffById[buffKey] = val
-            elseif type(val) == "number" and val > 0 then
-                if type(existing) ~= "number" or val > existing then
+            elseif buffKey then
+                local existing = mcBuffById[buffKey]
+                if not existing then
                     mcBuffById[buffKey] = val
+                elseif type(val) == "number" and val > 0 then
+                    if type(existing) ~= "number" or val > existing then
+                        mcBuffById[buffKey] = val
+                    end
                 end
             end
         end
@@ -1022,21 +1027,51 @@ mcEventFrame:SetScript("OnEvent", function()
     end
 end)
 
+-- Track when the last full buff scan happened, so we can estimate timer decay
+local mcLastScanTime = 0
+
+-- Lightweight timer-only refresh: subtracts elapsed time from cached values
+-- No API calls — pure math. Safe to call frequently.
+local function MC_DecayTimers()
+    if not mcOverlayFrame or not mcOverlayFrame:IsShown() then return end
+    local icons = mcOverlayFrame.icons
+    for i = 1, getn(icons) do
+        local btn = icons[i]
+        if btn:IsShown() and btn.timerFS and btn.hasBuff and btn.timeLeft and btn.timeLeft > 0 then
+            local elapsed = GetTime() - mcLastScanTime
+            local remaining = btn.timeLeft - elapsed
+            if remaining < 0 then remaining = 0 end
+            btn.timerFS:SetText(MC_FmtTime(remaining))
+            if remaining < 60 then
+                btn.timerFS:SetTextColor(1, 0.3, 0.3, 1)
+            elseif remaining < 300 then
+                btn.timerFS:SetTextColor(1, 0.82, 0, 1)
+            else
+                btn.timerFS:SetTextColor(1, 1, 1, 1)
+            end
+        end
+    end
+end
+
+local MC_TIMER_DECAY_INTERVAL = 1.0
+local mcTimerDecayTimer = 0
+
 local mcPollFrame = CreateFrame("Frame", nil, UIParent)
 mcPollFrame:SetScript("OnUpdate", function()
     if not mcOverlayFrame or not mcOverlayFrame:IsShown() then return end
     local dt = arg1 or 0
 
-    -- Incremental bag scan: 1 bag per frame (5 frames total for bags 0-4)
+    -- Incremental bag scan: 1 bag per frame
     if mcBagScanPos > 0 then
         local done = MC_BagScanTick()
         if done then
-            RefreshMCOverlay()  -- refresh once when bag scan completes
+            mcLastScanTime = GetTime()
+            RefreshMCOverlay()
         end
-        return  -- don't do buff scan in the same frame as bag scan
+        return
     end
 
-    -- Bag scan timer: start a new scan every 10s or when dirty
+    -- Bag scan timer
     mcBagTimer = mcBagTimer + dt
     if mcBagDirty or mcBagTimer >= MC_BAG_INTERVAL then
         mcBagTimer = 0
@@ -1045,13 +1080,23 @@ mcPollFrame:SetScript("OnUpdate", function()
         return
     end
 
-    -- Buff scan: on aura change or periodic timer
-    mcPollTimer = mcPollTimer + dt
-    local interval = mcInCombat and MC_POLL_COMBAT or MC_POLL_INTERVAL
-    if mcPollTimer >= interval or mcAurasDirty then
-        mcPollTimer = 0
-        mcAurasDirty = false
-        RefreshMCOverlay()
+    -- Auras changed → full buff rescan (debounced 1s)
+    if mcAurasDirty then
+        mcTimerDecayTimer = mcTimerDecayTimer + dt
+        if mcTimerDecayTimer >= 1.0 then
+            mcAurasDirty = false
+            mcTimerDecayTimer = 0
+            mcLastScanTime = GetTime()
+            RefreshMCOverlay()
+            return
+        end
+    end
+
+    -- Timer decay only: update text without API calls
+    mcTimerDecayTimer = mcTimerDecayTimer + dt
+    if mcTimerDecayTimer >= MC_TIMER_DECAY_INTERVAL then
+        mcTimerDecayTimer = 0
+        MC_DecayTimers()
     end
 end)
 

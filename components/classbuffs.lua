@@ -1107,8 +1107,14 @@ local cbEventFrame = CreateFrame("Frame", "ART_CB_EventFrame", UIParent)
 cbEventFrame:RegisterEvent("CHAT_MSG_ADDON")
 cbEventFrame:RegisterEvent("PLAYER_LOGIN")
 cbEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-cbEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-cbEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+-- Roster updates handled by central ART_OnRosterUpdate (staggered)
+if ART_OnRosterUpdate then ART_OnRosterUpdate(function()
+    -- Only set flags — the 3s poll timer does the actual work (CBPruneRoster, scan, overlay)
+    cbBroadcastDirty  = true
+    cbScheduledSendAt = GetTime() + CB_GetSendOffset()
+    cbScanDirty       = true
+    if cbOverlayFrame then CBOverlayUpdateVisibility() end
+end, 0.2) end
 cbEventFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
 cbEventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 cbEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1134,6 +1140,7 @@ cbPollFrame:SetScript("OnUpdate", function()
     if cbScanDirty and not cbScanInProgress then
         cbScanDirty = false
         cbLastScan  = GetTime()
+        CBPruneRoster()  -- remove players who left (lightweight with dirty-flag gating)
         CBScanAll()
     end
 
@@ -1182,18 +1189,6 @@ cbEventFrame:SetScript("OnEvent", function()
         if d.ovlShown then
             if not cbOverlayFrame then CreateCBOverlay() end
             RefreshCBOverlay()
-        end
-
-    elseif evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
-        CBPruneRoster()
-        cbBroadcastDirty  = true
-        cbScheduledSendAt = GetTime() + CB_GetSendOffset()
-        -- Do NOT reset cbLastScan here — honour the throttle even on roster changes
-        CBTriggerScan()
-        -- Update overlay visibility (may have entered/left a group)
-        if cbOverlayFrame then
-            CBOverlayUpdateVisibility()
-            if cbOverlayFrame:IsShown() then RefreshCBOverlay() end
         end
 
     elseif evt == "PLAYER_AURAS_CHANGED" then

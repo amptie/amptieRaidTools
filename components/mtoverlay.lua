@@ -343,6 +343,20 @@ function AmptieRaidTools_InitMTOverlay()
 		local dt = arg1
 		if not dt or dt < 0 then dt = 0 end
 		updateTimer = updateTimer + dt
+		if mtRosterDirty then
+			mtRosterDirty = false
+			if GetNumRaidMembers() == 0 then
+				this:Hide()
+			else
+				local oDb = GetOvlDB()
+				if oDb and oDb.shown then
+					LayoutOverlay()
+					UpdateOverlay()
+					this:Show()
+				end
+			end
+			return
+		end
 		if updateTimer >= UPDATE_INTERVAL then
 			updateTimer = 0
 			UpdateOverlay()
@@ -563,8 +577,6 @@ function AmptieRaidTools_UpdateMTOverlay()
 end
 
 local ART_MT_GroupEvt = CreateFrame("Frame", "ART_MT_GroupEvt", UIParent)
-ART_MT_GroupEvt:RegisterEvent("RAID_ROSTER_UPDATE")
-ART_MT_GroupEvt:RegisterEvent("PARTY_MEMBERS_CHANGED")
 ART_MT_GroupEvt:RegisterEvent("PLAYER_LOGIN")
 ART_MT_GroupEvt:RegisterEvent("PLAYER_ENTERING_WORLD")
 ART_MT_GroupEvt:RegisterEvent("RAID_TARGET_UPDATE")
@@ -585,3 +597,10 @@ ART_MT_GroupEvt:SetScript("OnEvent", function()
 		end
 	end
 end)
+-- Roster updates via staggered central system
+-- MT overlay has its own 0.25s OnUpdate that calls UpdateOverlay.
+-- Just flag a refresh need — the OnUpdate handles the actual work.
+local mtRosterDirty = false
+if ART_OnRosterUpdate then ART_OnRosterUpdate(function()
+	mtRosterDirty = true
+end, 0.4) end

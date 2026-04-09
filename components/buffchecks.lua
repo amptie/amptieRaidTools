@@ -2504,8 +2504,6 @@ function AmptieRaidTools_InitBuffChecks(body)
 
     -- ── Events (roster updates + login) ──────────────────────────
     local bcUiEvt = CreateFrame("Frame", nil, UIParent)
-    bcUiEvt:RegisterEvent("RAID_ROSTER_UPDATE")
-    bcUiEvt:RegisterEvent("PARTY_MEMBERS_CHANGED")
     bcUiEvt:RegisterEvent("PLAYER_ENTERING_WORLD")
     bcUiEvt:RegisterEvent("PLAYER_LOGIN")
     bcUiEvt:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -2531,6 +2529,17 @@ function AmptieRaidTools_InitBuffChecks(body)
         OnProfileChanged()
     end
 
+    -- Roster updates via staggered central system (after ApplyZoneBinding is defined)
+    if ART_OnRosterUpdate then ART_OnRosterUpdate(function()
+        ApplyZoneBinding()
+        local db2 = amptieRaidToolsDB
+        if db2 and db2.bcOverlayShown then bcRosterDirty = true end
+        if GetNumRaidMembers() == 0 then
+            if bcOverlayFrame then bcOverlayFrame:Hide() end
+            UpdateOvlBtn()
+        end
+    end, 0.3) end
+
     bcUiEvt:SetScript("OnEvent", function()
         local ev = event
         if bcOverlayFrame then RefreshBCOverlay() end
@@ -2550,19 +2559,6 @@ function AmptieRaidTools_InitBuffChecks(body)
                 UpdateOvlBtn()
             elseif bcOverlayFrame then
                 bcOverlayFrame:Hide()
-                UpdateOvlBtn()
-            end
-        elseif ev == "RAID_ROSTER_UPDATE" or ev == "PARTY_MEMBERS_CHANGED" then
-            -- Re-check zone binding (raid size may have changed, e.g. Kara 10→40)
-            ApplyZoneBinding()
-            -- Re-broadcast rules with debounce so new members receive them
-            local db2 = amptieRaidToolsDB
-            if db2 and db2.bcOverlayShown then
-                bcRosterDirty = true   -- handled by 5s poll timer
-            end
-            -- Close overlay when leaving raid
-            if GetNumRaidMembers() == 0 then
-                if bcOverlayFrame then bcOverlayFrame:Hide() end
                 UpdateOvlBtn()
             end
         end

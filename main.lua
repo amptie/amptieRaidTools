@@ -63,6 +63,50 @@ function ART_GetCurrentZoneKey()
     return "world"
 end
 
+-- ============================================================
+-- Global roster debounce: prevents 8+ components doing heavy work
+-- simultaneously when RAID_ROSTER_UPDATE fires.
+-- Components register callbacks via ART_OnRosterUpdate(fn, delay).
+-- A single event frame collects the event, then a staggered OnUpdate
+-- fires each callback at its assigned delay (0.0s, 0.1s, 0.2s, ...).
+-- ============================================================
+local artRosterCallbacks = {}  -- { {fn, delay}, ... }
+local artRosterDirty     = false
+local artRosterTimer     = 0
+local artRosterFired     = {}  -- tracks which callbacks already fired this cycle
+
+function ART_OnRosterUpdate(fn, delay)
+    tinsert(artRosterCallbacks, { fn = fn, delay = delay or 0 })
+end
+
+local artRosterFrame = CreateFrame("Frame", nil, UIParent)
+artRosterFrame:RegisterEvent("RAID_ROSTER_UPDATE")
+artRosterFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+artRosterFrame:SetScript("OnEvent", function()
+    if not artRosterDirty then
+        artRosterDirty = true
+        artRosterTimer = 0
+        for i = 1, getn(artRosterCallbacks) do artRosterFired[i] = false end
+    end
+end)
+artRosterFrame:SetScript("OnUpdate", function()
+    if not artRosterDirty then return end
+    local dt = arg1 or 0
+    artRosterTimer = artRosterTimer + dt
+    local allDone = true
+    for i = 1, getn(artRosterCallbacks) do
+        if not artRosterFired[i] then
+            if artRosterTimer >= artRosterCallbacks[i].delay then
+                artRosterFired[i] = true
+                artRosterCallbacks[i].fn()
+            else
+                allDone = false
+            end
+        end
+    end
+    if allDone then artRosterDirty = false end
+end)
+
 if DB.point == nil then DB.point = "CENTER" end
 if DB.x == nil then DB.x = 0 end
 if DB.y == nil then DB.y = 0 end

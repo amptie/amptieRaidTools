@@ -1053,6 +1053,7 @@ bbUpdater:SetScript("OnUpdate", function()
     bbTimerAccum = bbTimerAccum + dt
     if bbTimerAccum < BB_UPDATE_INT then return end
     bbTimerAccum = 0
+    -- Full update on every 0.25s tick (safe, proven pattern)
     if bbBuffFrame   and bbBuffFrame:IsShown()   then BBUpdateBuffBar()     end
     if bbDebuffFrame and bbDebuffFrame:IsShown() then BBUpdateDebuffBar()   end
     if bbConFrame    and bbConFrame:IsShown()    then BBUpdateConsolidated() end
@@ -1071,18 +1072,22 @@ end
 -- ============================================================
 -- ── Event frame
 -- ============================================================
+-- Dirty flag: set by events, consumed by the 0.25s OnUpdate timer.
+-- Prevents PLAYER_AURAS_CHANGED from triggering 10-20 full bar updates per second in combat.
+local bbAurasDirty  = false
+local bbWeaponDirty = false
+
 local bbEventFrame = CreateFrame("Frame", "ART_BB_EventFrame", UIParent)
 bbEventFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
 bbEventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 bbEventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 bbEventFrame:SetScript("OnEvent", function()
     local evt = event
-    if bbBuffFrame   and bbBuffFrame:IsShown()   then BBUpdateBuffBar()   end
-    if bbDebuffFrame and bbDebuffFrame:IsShown() then BBUpdateDebuffBar() end
-    if bbConFrame    and bbConFrame:IsShown()    then BBUpdateConsolidated() end
-    if (evt == "UNIT_INVENTORY_CHANGED" or evt == "PLAYER_ENTERING_WORLD")
-        and bbWeaponFrame and bbWeaponFrame:IsShown() then
-        BBUpdateWeaponBar()
+    if evt == "PLAYER_AURAS_CHANGED" then
+        bbAurasDirty = true  -- consumed by 0.25s OnUpdate
+    elseif evt == "UNIT_INVENTORY_CHANGED" or evt == "PLAYER_ENTERING_WORLD" then
+        bbAurasDirty  = true
+        bbWeaponDirty = true
     end
 end)
 

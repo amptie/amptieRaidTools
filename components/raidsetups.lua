@@ -914,10 +914,8 @@ function AmptieRaidTools_InitRaidSetups(body)
 end
 
 -- Refresh colors of all visible locked slots when raid roster changes
-local rsEventFrame = CreateFrame("Frame", "ART_RS_EventFrame", UIParent)
-rsEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-rsEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
-rsEventFrame:SetScript("OnEvent", function()
+-- Roster updates via staggered central system
+if ART_OnRosterUpdate then ART_OnRosterUpdate(function()
     for g = 1, NUM_GROUPS do
         if tagBtns[g] then
             for s = 1, NUM_SLOTS do
@@ -932,4 +930,4 @@ rsEventFrame:SetScript("OnEvent", function()
             end
         end
     end
-end)
+end, 0.6) end

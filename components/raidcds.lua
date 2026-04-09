@@ -520,8 +520,8 @@ local cdEvt = CreateFrame("Frame", "ART_CD_EventFrame", UIParent)
 cdEvt:RegisterEvent("PLAYER_LOGIN")
 cdEvt:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 cdEvt:RegisterEvent("CHAT_MSG_ADDON")
-cdEvt:RegisterEvent("RAID_ROSTER_UPDATE")
-cdEvt:RegisterEvent("PARTY_MEMBERS_CHANGED")
+-- Roster updates handled by central ART_OnRosterUpdate (staggered)
+if ART_OnRosterUpdate then ART_OnRosterUpdate(function() cdRosterDirty = true end, 0.0) end
 cdEvt:RegisterEvent("PLAYER_ENTERING_WORLD")
 cdEvt:RegisterEvent("PLAYER_AURAS_CHANGED")
 cdEvt:SetScript("OnEvent", function()
@@ -562,9 +562,6 @@ cdEvt:SetScript("OnEvent", function()
 	elseif evt == "SPELL_UPDATE_COOLDOWN" then
 		CheckOwnCooldowns()
 		CheckOwnTaunt()
-
-	elseif evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
-		cdRosterDirty = true
 
 	elseif evt == "PLAYER_ENTERING_WORLD" then
 		RebuildRoster()

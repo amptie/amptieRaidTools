@@ -167,8 +167,7 @@ end
 
 -- ── Event Frame ───────────────────────────────────────────────
 local raEvt = CreateFrame("Frame", "ART_RA_EventFrame", UIParent)
-raEvt:RegisterEvent("RAID_ROSTER_UPDATE")
-raEvt:RegisterEvent("PARTY_MEMBERS_CHANGED")
+-- Roster updates handled by central ART_OnRosterUpdate (staggered)
 raEvt:RegisterEvent("PLAYER_LOGIN")
 raEvt:RegisterEvent("PLAYER_ENTERING_WORLD")
 raEvt:RegisterEvent("CHAT_MSG_WHISPER")
@@ -189,13 +188,6 @@ raEvt:SetScript("OnEvent", function()
 				if RefreshMTUI then RefreshMTUI() end
 				if AmptieRaidTools_UpdateMTOverlay then AmptieRaidTools_UpdateMTOverlay() end
 			end
-		end
-
-	elseif evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
-		RunAutoAssists()
-		-- New member joined: if we are lead/assist, broadcast so they get the list
-		if CanBroadcastMTs() and GetNumRaidMembers() > 0 then
-			BroadcastMTs(true)
 		end
 
 	elseif evt == "CHAT_MSG_WHISPER" then
@@ -230,6 +222,13 @@ raEvt:SetScript("OnEvent", function()
 		end
 	end
 end)
+-- RaidAssists roster work is lightweight (name checks + 1 message), fine in callback
+if ART_OnRosterUpdate then ART_OnRosterUpdate(function()
+	RunAutoAssists()
+	if CanBroadcastMTs() and GetNumRaidMembers() > 0 then
+		BroadcastMTs(true)
+	end
+end, 0.5) end
 
 -- ── Panel UI ──────────────────────────────────────────────────
 function AmptieRaidTools_InitRaidAssists(body)

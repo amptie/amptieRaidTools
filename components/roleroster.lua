@@ -156,8 +156,7 @@ end
 -- ============================================================
 local rlEventFrame = CreateFrame("Frame", "ART_RL_EventFrame", UIParent)
 rlEventFrame:RegisterEvent("CHAT_MSG_ADDON")
-rlEventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-rlEventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+-- Roster updates handled by central ART_OnRosterUpdate (staggered)
 rlEventFrame:SetScript("OnEvent", function()
     local evt = event
     local a1, a2, a3, a4 = arg1, arg2, arg3, arg4
@@ -173,7 +172,10 @@ rlEventFrame:SetScript("OnEvent", function()
         if dashPos then nameOnly = string.sub(sender, 1, dashPos - 1) end
 
         if msg == "R" then
-            BroadcastOwnSpec()
+            -- Don't broadcast immediately (40 players requesting at once = burst)
+            -- The broadcast dirty flag + jitter timer handles this
+            rlBroadcastDirty  = true
+            rlScheduledSendAt = GetTime() + RL_GetSendOffset()
         else
             local sep = strfind(msg, "^", 1, true)
             if sep then
@@ -209,52 +211,61 @@ rlEventFrame:SetScript("OnEvent", function()
                         end
                     end
                     rosterAltSpecs[nameOnly] = alts
-                    RefreshPanel()
+                    rlRosterDirty = true  -- batch UI refresh via OnUpdate
                 end
             end
         end
 
-    elseif evt == "RAID_ROSTER_UPDATE" or evt == "PARTY_MEMBERS_CHANGED" then
-        -- Rebuild class map and prune players no longer in group
-        local inGroup = {}
-        local numRaid  = GetNumRaidMembers()
-        local numParty = GetNumPartyMembers()
+    end
+end)
+
+-- Incremental roster rebuild: processes N members per frame
+local rlRosterDirty    = false
+local rlRosterPos      = 0
+local rlRosterTotal    = 0
+local rlRosterInGroup  = {}
+local RL_ROSTER_PER_FRAME = 5
+
+local rlRosterFrame = CreateFrame("Frame", nil, UIParent)
+rlRosterFrame:SetScript("OnUpdate", function()
+    if not rlRosterDirty then return end
+    if rlRosterPos == 0 then
+        -- Init pass
+        for k in pairs(rlRosterInGroup) do rlRosterInGroup[k] = nil end
+        rlRosterTotal = GetNumRaidMembers()
+        if rlRosterTotal == 0 then rlRosterTotal = GetNumPartyMembers() end
+        rlRosterPos = 1
+        return
+    end
+    local endPos = rlRosterPos + RL_ROSTER_PER_FRAME - 1
+    if endPos > rlRosterTotal then endPos = rlRosterTotal end
+    local numRaid = GetNumRaidMembers()
+    for i = rlRosterPos, endPos do
+        local unit, name, cl
         if numRaid > 0 then
-            for i = 1, numRaid do
-                local unit = "raid" .. i
-                local name = UnitName(unit)
-                if name then
-                    inGroup[name] = true
-                    local _, cl = UnitClass(unit)
-                    if cl then rosterClasses[name] = string.upper(cl) end
-                end
-            end
-        elseif numParty > 0 then
-            local me = UnitName("player")
-            if me then
-                inGroup[me] = true
-                local _, cl = UnitClass("player")
-                if cl then rosterClasses[me] = string.upper(cl) end
-            end
-            for i = 1, numParty do
-                local unit = "party" .. i
-                local name = UnitName(unit)
-                if name then
-                    inGroup[name] = true
-                    local _, cl = UnitClass(unit)
-                    if cl then rosterClasses[name] = string.upper(cl) end
-                end
-            end
+            unit = "raid" .. i
+        else
+            if i == 1 then unit = "player"
+            else unit = "party" .. (i - 1) end
         end
+        name = UnitName(unit)
+        if name then
+            rlRosterInGroup[name] = true
+            local _, c = UnitClass(unit)
+            if c then rosterClasses[name] = string.upper(c) end
+        end
+    end
+    rlRosterPos = endPos + 1
+    if rlRosterPos > rlRosterTotal then
+        -- Pass complete: prune and refresh
         for name in pairs(rosterSpecs) do
-            if not inGroup[name] then
+            if not rlRosterInGroup[name] then
                 rosterSpecs[name]    = nil
                 rosterAltSpecs[name] = nil
                 rosterClasses[name]  = nil
                 rosterVersions[name] = nil
             end
         end
-        -- Ensure self is present
         local me = UnitName("player")
         if me then
             if not rosterSpecs[me] then
@@ -262,15 +273,22 @@ rlEventFrame:SetScript("OnEvent", function()
                 if spec and spec ~= "" then rosterSpecs[me] = spec end
             end
             if not rosterClasses[me] then
-                local _, cl = UnitClass("player")
-                if cl then rosterClasses[me] = string.upper(cl) end
+                local _, c = UnitClass("player")
+                if c then rosterClasses[me] = string.upper(c) end
             end
         end
         rlBroadcastDirty  = true
         rlScheduledSendAt = GetTime() + RL_GetSendOffset()
         RefreshPanel()
+        rlRosterDirty = false
+        rlRosterPos   = 0
     end
 end)
+
+if ART_OnRosterUpdate then ART_OnRosterUpdate(function()
+    rlRosterDirty = true
+    rlRosterPos   = 0
+end, 0.1) end
 
 -- Public accessor for buff check target counting
 function ART_RL_GetRosterSpecs() return rosterSpecs end
