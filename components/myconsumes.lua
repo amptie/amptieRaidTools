@@ -1293,28 +1293,11 @@ function AmptieRaidTools_InitMyConsumes(body)
     rsDesc:SetText("Auto-transfer from bank when opening it.")
     rsDesc:SetTextColor(0.6, 0.6, 0.6, 1)
 
-    -- Scroll area for restock rows
-    local rsSF = CreateFrame("ScrollFrame", nil, panel)
-    rsSF:SetPoint("TOPLEFT", rsDesc, "BOTTOMLEFT", 0, -4)
-    rsSF:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 12, 4)
-    rsSF:SetWidth(268)
-    local rsContent = CreateFrame("Frame", nil, rsSF)
+    -- Restock rows container (no internal scroll — outer body scroll handles it)
+    local rsContent = CreateFrame("Frame", nil, panel)
+    rsContent:SetPoint("TOPLEFT", rsDesc, "BOTTOMLEFT", 0, -4)
     rsContent:SetWidth(268); rsContent:SetHeight(1)
-    rsSF:SetScrollChild(rsContent)
-    local rsScrollOff = 0
     local RS_ROW_H = 24
-    local function SetRSScroll(val)
-        local maxS = math.max(rsContent:GetHeight() - rsSF:GetHeight(), 0)
-        if val < 0 then val = 0 end
-        if val > maxS then val = maxS end
-        rsScrollOff = val
-        rsContent:ClearAllPoints()
-        rsContent:SetPoint("TOPLEFT", rsSF, "TOPLEFT", 0, val)
-    end
-    rsSF:EnableMouseWheel(true)
-    rsSF:SetScript("OnMouseWheel", function()
-        SetRSScroll(rsScrollOff - arg1 * RS_ROW_H * 3)
-    end)
 
     local rsRows = {}
     local RefreshRestockList  -- forward decl
@@ -1644,29 +1627,12 @@ function AmptieRaidTools_InitMyConsumes(body)
     local addBtn = MakeBtn(rulesPanel, "+ Add Rule", 90, 22)
     addBtn:SetPoint("TOPRIGHT", rulesPanel, "TOPRIGHT", 0, 0)
 
-    -- Rules scroll area
-    local rulesSF = CreateFrame("ScrollFrame", nil, rulesPanel)
-    rulesSF:SetPoint("TOPLEFT", profEdit, "BOTTOMLEFT", 0, -4)
-    rulesSF:SetPoint("BOTTOMRIGHT", rulesPanel, "BOTTOMRIGHT", 0, 0)
-
-    local rulesContent = CreateFrame("Frame", nil, rulesSF)
+    -- Rules rows container (no internal scroll — outer body scroll handles it)
+    local rulesContent = CreateFrame("Frame", nil, rulesPanel)
+    rulesContent:SetPoint("TOPLEFT", profEdit, "BOTTOMLEFT", 0, -4)
+    rulesContent:SetPoint("RIGHT", rulesPanel, "RIGHT", 0, 0)
     rulesContent:SetWidth(320); rulesContent:SetHeight(1)
-    rulesSF:SetScrollChild(rulesContent)
-
-    local rulesScrollOff = 0
     local RULE_ROW_H = 26
-    local function SetRulesScroll(val)
-        local maxS = math.max(rulesContent:GetHeight() - rulesSF:GetHeight(), 0)
-        if val < 0 then val = 0 end
-        if val > maxS then val = maxS end
-        rulesScrollOff = val
-        rulesContent:ClearAllPoints()
-        rulesContent:SetPoint("TOPLEFT", rulesSF, "TOPLEFT", 0, val)
-    end
-    rulesSF:EnableMouseWheel(true)
-    rulesSF:SetScript("OnMouseWheel", function()
-        SetRulesScroll(rulesScrollOff - arg1 * RULE_ROW_H * 3)
-    end)
 
     local ruleRows = {}
 
