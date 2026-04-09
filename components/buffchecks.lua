@@ -2508,6 +2508,7 @@ function AmptieRaidTools_InitBuffChecks(body)
     bcUiEvt:RegisterEvent("PARTY_MEMBERS_CHANGED")
     bcUiEvt:RegisterEvent("PLAYER_ENTERING_WORLD")
     bcUiEvt:RegisterEvent("PLAYER_LOGIN")
+    bcUiEvt:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     -- Apply zone binding: switch to the bound profile for the current raid zone
     local function ApplyZoneBinding()
         local db2 = amptieRaidToolsDB
@@ -2534,7 +2535,10 @@ function AmptieRaidTools_InitBuffChecks(body)
         local ev = event
         if bcOverlayFrame then RefreshBCOverlay() end
 
-        if ev == "PLAYER_ENTERING_WORLD" or ev == "PLAYER_LOGIN" then
+        if ev == "ZONE_CHANGED_NEW_AREA" then
+            ApplyZoneBinding()
+            if bcOverlayFrame and bcOverlayFrame:IsShown() then RefreshBCOverlay() end
+        elseif ev == "PLAYER_ENTERING_WORLD" or ev == "PLAYER_LOGIN" then
             local db2 = amptieRaidToolsDB
             -- Apply zone binding first so the correct profile is active
             ApplyZoneBinding()

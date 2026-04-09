@@ -286,10 +286,18 @@ local function MC_GetItemIds(bcBuff)
     return nil
 end
 
-local function MC_ScanBags()
-    for k in pairs(mcBagCache) do mcBagCache[k] = nil end
+-- Incremental bag scan: scans 1 bag per frame tick, spreads work over 5 frames
+local mcBagIdToKey    = {}  -- rebuilt when scan starts
+local mcBagScanPos    = 0   -- 0 = idle, 1-5 = scanning bag (0-4)
+local mcBagScanTemp   = {}  -- accumulator during scan
+local MC_BAG_INTERVAL = 10.0
+local mcBagTimer      = 0
+
+local function MC_BagScanStart()
+    -- Build reverse map: itemId → buffKey
+    for k in pairs(mcBagIdToKey) do mcBagIdToKey[k] = nil end
+    for k in pairs(mcBagScanTemp) do mcBagScanTemp[k] = nil end
     if not ART_BC_BY_KEY_ALL then return end
-    local idToKey = {}
     local prof = GetActiveMCProfile()
     if not prof then return end
     for ri = 1, getn(prof.rules) do
@@ -298,29 +306,42 @@ local function MC_ScanBags()
         if bcBuff then
             local ids = MC_GetItemIds(bcBuff)
             if ids then
-                for ii = 1, getn(ids) do idToKey[ids[ii]] = bk end
+                for ii = 1, getn(ids) do mcBagIdToKey[ids[ii]] = bk end
             end
         end
-        if not mcBagCache[bk] then mcBagCache[bk] = 0 end
+        mcBagScanTemp[bk] = 0
     end
-    for bag = 0, 4 do
-        local slots = GetContainerNumSlots(bag)
-        for slot = 1, slots do
-            local link = GetContainerItemLink(bag, slot)
-            if link then
-                local _, _, idStr = sfind(link, "item:(%d+):")
-                if idStr then
-                    local id = tonumber(idStr)
-                    local bk = idToKey[id]
-                    if bk then
-                        local _, cnt = GetContainerItemInfo(bag, slot)
-                        mcBagCache[bk] = (mcBagCache[bk] or 0) + MC_ItemCount(cnt)
-                    end
+    mcBagScanPos = 1  -- start scanning bag 0 next frame
+end
+
+local function MC_BagScanTick()
+    if mcBagScanPos <= 0 then return false end
+    local bag = mcBagScanPos - 1  -- bags 0-4
+    local slots = GetContainerNumSlots(bag)
+    for slot = 1, slots do
+        local link = GetContainerItemLink(bag, slot)
+        if link then
+            local _, _, idStr = sfind(link, "item:(%d+):")
+            if idStr then
+                local id = tonumber(idStr)
+                local bk = mcBagIdToKey[id]
+                if bk then
+                    local _, cnt = GetContainerItemInfo(bag, slot)
+                    mcBagScanTemp[bk] = (mcBagScanTemp[bk] or 0) + MC_ItemCount(cnt)
                 end
             end
         end
     end
-    mcBagDirty = false
+    mcBagScanPos = mcBagScanPos + 1
+    if mcBagScanPos > 5 then
+        -- Scan complete: swap cache
+        for k in pairs(mcBagCache) do mcBagCache[k] = nil end
+        for k, v in pairs(mcBagScanTemp) do mcBagCache[k] = v end
+        mcBagScanPos = 0
+        mcBagDirty = false
+        return true  -- scan finished
+    end
+    return false
 end
 
 -- Find and use an item from bags
@@ -532,7 +553,7 @@ RefreshMCOverlay = function()
     end
 
     MC_ScanPlayerBuffs()
-    if mcBagDirty then MC_ScanBags() end
+    -- Bag counts are updated by the incremental bag scan timer (every 10s)
 
     -- Build icon data
     local iconData = {}
@@ -964,8 +985,10 @@ end)
 -- ============================================================
 -- Events + poll
 -- ============================================================
-local mcPollTimer = 0
-local MC_POLL_INTERVAL = 1.0
+local mcPollTimer   = 0
+local MC_POLL_INTERVAL = 3.0       -- base interval (out of combat)
+local MC_POLL_COMBAT   = 5.0       -- slower in combat (only timer decay matters)
+local mcAurasDirty  = false        -- set by PLAYER_AURAS_CHANGED, consumed by poll
 
 local mcEventFrame = CreateFrame("Frame", "ART_MC_EventFrame", UIParent)
 mcEventFrame:RegisterEvent("PLAYER_AURAS_CHANGED")
@@ -981,33 +1004,54 @@ mcEventFrame:SetScript("OnEvent", function()
         mcInCombat = true
     elseif evt == "PLAYER_REGEN_ENABLED" then
         mcInCombat = false
-        if mcOverlayFrame and mcOverlayFrame:IsShown() then RefreshMCOverlay() end
+        mcAurasDirty = true  -- refresh after combat ends
     elseif evt == "BANKFRAME_OPENED" then
         MC_RestockFromBank()
     elseif evt == "BAG_UPDATE" then
         mcBagDirty = true
+    elseif evt == "PLAYER_AURAS_CHANGED" then
+        mcAurasDirty = true  -- consumed by poll timer, not processed here
     elseif evt == "PLAYER_ENTERING_WORLD" or evt == "ZONE_CHANGED_NEW_AREA" then
         mcBagDirty = true
-        -- Restore overlay on login/reload if it was shown before
+        mcAurasDirty = true
         local d = GetMCDB()
         if d.ovlShown and not mcOverlayFrame then CreateMCOverlay() end
         if d.ovlShown and mcOverlayFrame and not mcOverlayFrame:IsShown() then
             mcOverlayFrame:Show()
         end
-        if mcOverlayFrame and mcOverlayFrame:IsShown() then RefreshMCOverlay() end
     end
-    -- PLAYER_AURAS_CHANGED: handled by poll timer
 end)
 
 local mcPollFrame = CreateFrame("Frame", nil, UIParent)
 mcPollFrame:SetScript("OnUpdate", function()
+    if not mcOverlayFrame or not mcOverlayFrame:IsShown() then return end
     local dt = arg1 or 0
-    mcPollTimer = mcPollTimer + dt
-    if mcPollTimer >= MC_POLL_INTERVAL then
-        mcPollTimer = 0
-        if mcOverlayFrame and mcOverlayFrame:IsShown() then
-            RefreshMCOverlay()
+
+    -- Incremental bag scan: 1 bag per frame (5 frames total for bags 0-4)
+    if mcBagScanPos > 0 then
+        local done = MC_BagScanTick()
+        if done then
+            RefreshMCOverlay()  -- refresh once when bag scan completes
         end
+        return  -- don't do buff scan in the same frame as bag scan
+    end
+
+    -- Bag scan timer: start a new scan every 10s or when dirty
+    mcBagTimer = mcBagTimer + dt
+    if mcBagDirty or mcBagTimer >= MC_BAG_INTERVAL then
+        mcBagTimer = 0
+        mcBagDirty = false
+        MC_BagScanStart()
+        return
+    end
+
+    -- Buff scan: on aura change or periodic timer
+    mcPollTimer = mcPollTimer + dt
+    local interval = mcInCombat and MC_POLL_COMBAT or MC_POLL_INTERVAL
+    if mcPollTimer >= interval or mcAurasDirty then
+        mcPollTimer = 0
+        mcAurasDirty = false
+        RefreshMCOverlay()
     end
 end)
 
