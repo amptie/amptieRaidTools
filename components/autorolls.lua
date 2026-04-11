@@ -128,7 +128,7 @@ end)
 -- ============================================================
 local AR_ROWS = {
 	{ key = "sand",   label = "Black Morass (Sand)",
-	  tooltip = "Hourglass Sand from Black Morass (item 50203).\n|cffaaaaааWhen Wardens of Time Exalted: only None / Pass available.|r" },
+	  tooltip = "Corrupted Sand from Black Morass (item 50203).\n|cffaaaaааWhen Wardens of Time Exalted: only None / Pass available.|r" },
 	{ key = "scholo", label = "Scholo/Strat (Corruptor's Scourgestones)",
 	  tooltip = "Corruptor's Scourgestone from Scholomance / Stratholme (item 12843)." },
 	{ key = "zg",     label = "Zul'Gurub (Coins + Bijous)",

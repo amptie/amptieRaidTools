@@ -58,7 +58,7 @@ local ART_IC_ITEMS = {
     { key="ELX_FORTITUDE",      name="Elixir of Fortitude",                sec="consumable", ids={3825} },
     { key="ELX_GIANTS",         name="Elixir of Giants",                   sec="consumable", ids={9206} },
     { key="ELX_GR_ARCANE_PWR",  name="Elixir of Greater Arcane Power",     sec="consumable", ids={55048} },
-    { key="ELX_GR_FIRE_PWR",    name="Elixir of Greater Fire Power",       sec="consumable", ids={21546} },
+    { key="ELX_GR_FIRE_PWR",    name="Elixir of Greater Firepower",       sec="consumable", ids={21546} },
     { key="ELX_GR_FROST_PWR",   name="Elixir of Greater Frost Power",      sec="consumable", ids={55046} },
     { key="ELX_GR_NATURE_PWR",  name="Elixir of Greater Nature Power",     sec="consumable", ids={50237} },
     { key="ELX_MONGOOSE",       name="Elixir of the Mongoose",             sec="consumable", ids={13452} },
@@ -104,7 +104,7 @@ local ART_IC_ITEMS = {
     { key="MAJ_HEALTHSTONE",    name="Major Healthstone",                  sec="item", ids={19013,19012,9421}, anyOne=true },
     { key="MEDIVH_MERLOT",      name="Medivh's Merlot",                    sec="item", ids={61174} },
     { key="MEDIVH_MERLOT_BLUE", name="Medivh's Merlot Blue",               sec="item", ids={61175} },
-    { key="ONYXA_CLOAK",        name="Onyxa Scale Cloak",                  sec="item", ids={15138} },
+    { key="ONYXA_CLOAK",        name="Onyxia Scale Cloak",                  sec="item", ids={15138} },
     -- Resistances (checked via UnitResistance, no item IDs)
     { key="RES_FIRE",   name="Fire Resistance",   sec="resistance", resistIndex=2 },
     { key="RES_NATURE", name="Nature Resistance", sec="resistance", resistIndex=3 },

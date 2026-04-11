@@ -106,7 +106,7 @@ end
 -- SpellID → buffKey (SuperWoW path: zero false positives)
 local MC_SPELL_TO_KEY = {
     -- Flasks
-    [17626]="FLASK_TITANS", [13512]="FLASK_SUP_PWR", [17627]="FLASK_DIST_WIS", [17629]="FLASK_CHROM_RES",
+    [17626]="FLASK_TITANS", [17628]="FLASK_SUP_PWR", [17627]="FLASK_DIST_WIS", [17629]="FLASK_CHROM_RES",
     -- Protection
     [17549]="GR_ARCANE_PROT", [17543]="GR_FIRE_PROT", [17544]="GR_FROST_PROT",
     [17548]="GR_SHADOW_PROT", [17545]="GR_HOLY_PROT", [17546]="GR_NATURE_PROT", [7254]="NATURE_PROT",
@@ -199,6 +199,14 @@ local MC_TEX_TO_KEY = {
     ["Interface\\Icons\\Spell_Fire_Incinerate"]="FOOD",    -- Dragonbreath Chili
 }
 
+-- Consumables that show as debuffs instead of buffs (e.g. Kreeg's Stout Beatdown)
+local MC_DEBUFF_SPELL_TO_KEY = {
+    [22790] = "KREEG_BEATDOWN",
+}
+local MC_DEBUFF_TEX_TO_KEY = {
+    ["Interface\\Icons\\INV_Drink_05"] = "KREEG_BEATDOWN",
+}
+
 -- Buff cache: [buffKey] = timeLeft or true;  mcFoodActive = timeLeft or false
 local mcBuffById = {}
 local mcFoodActive = false
@@ -260,6 +268,39 @@ local function MC_ScanPlayerBuffs()
                         mcBuffById[buffKey] = val
                     end
                 end
+            end
+        end
+    end
+
+    -- Pass 3: Debuff scan — some consumables (Kreeg's) apply as debuffs
+    local debuffTexToKey = {}
+    for i = 1, 64 do
+        local tex, stacks, dType, spellId
+        if MC_HAS_SUPERWOW then
+            tex, stacks, dType, spellId = UnitDebuff("player", i)
+        else
+            tex = UnitDebuff("player", i)
+        end
+        if not tex then break end
+
+        local bk = nil
+        if MC_HAS_SUPERWOW and spellId and spellId > 0 then
+            bk = MC_DEBUFF_SPELL_TO_KEY[spellId]
+        elseif not MC_HAS_SUPERWOW then
+            bk = MC_DEBUFF_TEX_TO_KEY[tex]
+        end
+        if bk then debuffTexToKey[tex] = bk end
+    end
+
+    for slot = 0, 63 do
+        local buffIndex = GetPlayerBuff(slot, "HARMFUL")
+        if buffIndex < 0 then break end
+        local tex = GetPlayerBuffTexture(buffIndex)
+        if tex then
+            local buffKey = debuffTexToKey[tex]
+            if buffKey and not mcBuffById[buffKey] then
+                local tl = GetPlayerBuffTimeLeft(buffIndex)
+                mcBuffById[buffKey] = (tl and tl > 0) and tl or true
             end
         end
     end
