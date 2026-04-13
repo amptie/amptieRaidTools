@@ -154,6 +154,8 @@ local ART_BC_BUFFS = {
     { key="GOBLIN_SAPPER",        name="Goblin Sapper Charge",             buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\Spell_Fire_SelfDestruct",       itemKey=nil, itemIds={10646}   },
     { key="DENSE_DYNAMITE",       name="Dense Dynamite",                   buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Misc_Bomb_06",              itemKey=nil, itemIds={18641}   },
     { key="POT_QUICKNESS",        name="Potion of Quickness",              buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Potion_08",                 itemKey=nil, itemIds={61181}   },
+    { key="TEA_SUGAR",            name="Tea with Sugar",                   buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\INV_Drink_15",                  itemKey=nil, itemIds={15723}   },
+    { key="NORDANAAR_TEA",        name="Nordanaar Herbal Tea",             buffName=nil,                                sec="onuse",      icon="Interface\\Icons\\inv_drink_waterskin_03",        itemKey=nil, itemIds={61675}   },
     { key="JUJU_FLURRY",          name="Juju Flurry",                      buffName="Juju Flurry",                      sec="physical",   icon="Interface\\Icons\\INV_Misc_MonsterScales_17",     itemKey=nil, itemIds={12450}   },
     -- Caster/Healer drink
     { key="KREEG_BEATDOWN",       name="Kreeg's Stout Beatdown",           buffName="Stout",                            sec="caster",     icon="Interface\\Icons\\INV_Drink_05",                  itemKey=nil, itemIds={18284}   },

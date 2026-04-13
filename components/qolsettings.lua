@@ -781,14 +781,36 @@ end
 QuestFrameGreetingPanel_OnShow = QR_PostHook(QuestFrameGreetingPanel_OnShow, QR_QuestFrameGreetingPanel_OnShow)
 
 -- ============================================================
--- BG leave: poll every second while inside a BG.
--- No reliance on specific event timing or localised "wins!" message text.
+-- BG join/leave: poll every second.
+-- Join: LazyPig style — wait until last 3s of the queue timer, then auto-join.
+-- Leave: poll while inside a BG for battle end.
 local bgLeavePoll = 0
+local qolBgAnnounced = false
 local qolBgLeaveFrame = CreateFrame("Frame", nil, UIParent)
 qolBgLeaveFrame:SetScript("OnUpdate", function()
     local t = GetTime()
     if t < bgLeavePoll then return end
     bgLeavePoll = t + 1
+    -- Auto-join BG: check all battlefield slots for "confirm" status
+    if QDB("EBG") then
+        for i = 1, 3 do
+            local status, mapName = GetBattlefieldStatus(i)
+            if status == "confirm" then
+                local expireMs = GetBattlefieldPortExpiration(i)
+                local expireSec = expireMs and floor(expireMs / 1000) or 0
+                if expireSec <= 3 then
+                    AcceptBattlefieldPort(i, 1)
+                    StaticPopup_Hide("CONFIRM_BATTLEFIELD_ENTRY")
+                    qolBgAnnounced = false
+                elseif not qolBgAnnounced then
+                    qolBgAnnounced = true
+                    DEFAULT_CHAT_FRAME:AddMessage("|cffffff00[aRT]|r Auto Join " .. (mapName or "BG") .. " in " .. expireSec .. "s")
+                end
+            elseif status ~= "confirm" and qolBgAnnounced then
+                qolBgAnnounced = false  -- reset if queue expired/cancelled
+            end
+        end
+    end
     if not QDB("LBG") then return end
     if not QoL_IsInBG() then return end
     if GetBattlefieldWinner() ~= nil then
@@ -906,14 +928,8 @@ qolEventFrame:SetScript("OnEvent", function()
         end
 
     elseif evt == "UPDATE_BATTLEFIELD_STATUS" then
-        local db = GetQolDB()
-        for i = 1, 3 do
-            local status = GetBattlefieldStatus(i)
-            if status == "confirm" and db.EBG then
-                AcceptBattlefieldPort(i, 1)
-            end
-        end
-        -- LBG is handled by the polling frame; no timer logic needed here.
+        -- EBG (auto-join) is handled by the 1s polling frame (LazyPig style: join at last 3s).
+        -- LBG is also handled by the polling frame; no timer logic needed here.
 
     elseif evt == "CHAT_MSG_SYSTEM" then
         -- Leader Queue Announce: forward "Queued for X" system message to raid/party (LazyPig AQUE)
@@ -1075,7 +1091,7 @@ function AmptieRaidTools_InitQoLSettings(body)
     cbEbg:SetChecked(db.EBG)
     cbEbg.userOnClick = function() GetQolDB().EBG = cbEbg:GetChecked() end
     SetCbTooltip(cbEbg, "Enter Battleground",
-        "Automatically click the 'Enter' button\nwhen a battleground is ready.")
+        "Automatically enter the battleground\nin the last 3 seconds of the queue timer.\n(LazyPig style — stays in queue as long as possible)")
 
     local cbLbg = ART_CreateCheckbox(panel, "Leave Battleground when battle ends")
     cbLbg:SetPoint("TOPLEFT", cbEbg, "BOTTOMLEFT", 0, ROW_H)
