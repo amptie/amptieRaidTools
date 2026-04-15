@@ -262,6 +262,12 @@ end
 local art_stance_scanStr = string.gsub(SPELL_FAILED_ONLY_SHAPESHIFT, "%%s", "(.+)")
 
 -- Dedicated error listener frame
+-- Debounce: auto-cast a stance/form at most once per second.
+-- Why: CastSpellByName can itself emit another UI_ERROR_MESSAGE that matches
+-- the "shapeshift" pattern, which re-enters this handler and keeps toggling
+-- the form. That toggling is registered as player activity and spams
+-- "You are now AFK" / "You are no longer AFK" when the user is idle.
+local art_stance_lastFire = 0
 local art_stance_frame = CreateFrame("Frame")
 art_stance_frame:RegisterEvent("UI_ERROR_MESSAGE")
 art_stance_frame:SetScript("OnEvent", function()
@@ -270,27 +276,30 @@ art_stance_frame:SetScript("OnEvent", function()
     if not amptieRaidToolsDB or not amptieRaidToolsDB.qolSettings then return end
     if not amptieRaidToolsDB.qolSettings.AUTOSTANCE then return end
 
+    local now = GetTime()
+    if now - art_stance_lastFire < 1.0 then return end
+
     -- Warrior/Paladin: "Can only be used in Battle Stance, ..."
     for stances in string.gfind(a1, art_stance_scanStr) do
         for _, stance in pairs({ art_strsplit(",", stances) }) do
             CastSpellByName(string.gsub(stance, "^%s*(.-)%s*$", "%1"))
         end
+        art_stance_lastFire = now
         return
     end
 
-    -- Druid: shapeshift errors → cast current form again to toggle it off
-    local isLeaveForm = (QOL_LEAVE_FORM_ERRORS and QOL_LEAVE_FORM_ERRORS[a1])
-        or strfind(a1, "shapeshift")
-        or strfind(a1, "shapeshifted")
-        or strfind(a1, "Shapeshift")
-    if isLeaveForm then
-        if strfind(a1, "interact") and UnitAffectingCombat("player") then return end
+    -- Druid: only on whitelisted shapeshift errors. The old broad
+    -- strfind("shapeshift") fallback matched self-generated cast errors
+    -- and caused infinite toggle loops while AFK.
+    if QOL_LEAVE_FORM_ERRORS and QOL_LEAVE_FORM_ERRORS[a1] then
+        if a1 == ERR_CANT_INTERACT_SHAPESHIFTED and UnitAffectingCombat("player") then return end
         local formName = QoL_GetCurrentFormName()
         if formName then
             CastSpellByName(formName)
         else
             QoL_CancelDruidForm()
         end
+        art_stance_lastFire = now
     end
 end)
 
@@ -948,8 +957,11 @@ qolEventFrame:SetScript("OnEvent", function()
         end
 
     elseif evt == "BATTLEFIELDS_SHOW" then
-        -- Automate Queue / Re-Queue: join as group if leader, otherwise solo (LazyPig pattern)
-        if QDB("AQUEUE") or QDB("QBG") then
+        -- Automate Queue: only when AQUEUE is explicitly enabled.
+        -- QBG (re-queue after leaving BG) must NOT auto-queue on every
+        -- Battlemaster interaction — otherwise the BG sign-up window closes
+        -- before the user can pick an instance.
+        if QDB("AQUEUE") then
             if (GetNumPartyMembers() > 0 or GetNumRaidMembers() > 0) and IsPartyLeader() then
                 JoinBattlefield(0, 1)
             else

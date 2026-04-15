@@ -117,6 +117,7 @@ local MC_SPELL_TO_KEY = {
     [17538]="ELX_MONGOOSE", [11405]="ELX_GIANTS", [16323]="JUJU_POWER", [17038]="WINTERFALL_FW",
     [16329]="JUJU_MIGHT", [17528]="MIGHTY_RAGE", [10667]="ROIDS", [10669]="GROUND_SCORPOK",
     [16322]="JUJU_FLURRY",
+    [11406]="ELX_DEMONSLAYING",
     -- Hybrid
     [36931]="CONCOCTION_ARCANE", [36928]="CONCOCTION_EMERALD", [36934]="CONCOCTION_DREAM",
     -- Caster/Healer
@@ -1384,6 +1385,7 @@ function AmptieRaidTools_InitMyConsumes(body)
                                          FOOD_DEEP_SEA_STEW=true, FOOD_GURUBASHI_GUMBO=true} },
         { header="Melee",          keys={ELX_MONGOOSE=true, ELX_GIANTS=true, JUJU_POWER=true, WINTERFALL_FW=true,
                                          JUJU_MIGHT=true, JUJU_FLURRY=true, MIGHTY_RAGE=true, ROIDS=true, GROUND_SCORPOK=true,
+                                         ELX_DEMONSLAYING=true,
                                          FOOD_POWER_MUSH=true, FOOD_DESERT_DUMP=true, FOOD_MIGHTFISH=true,
                                          FOOD_GRILLED_SQUID=true, FOOD_SOUR_BERRY=true, FOOD_TELABIM_SURP=true,
                                          FOOD_SANDSWEPT_CRUNCH=true} },
